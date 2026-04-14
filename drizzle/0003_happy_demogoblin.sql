@@ -1,0 +1,1 @@
+ALTER TABLE `teams` ADD `budget_monthly_cents` integer;

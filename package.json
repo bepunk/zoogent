@@ -1,0 +1,51 @@
+{
+  "name": "zoogent",
+  "version": "0.3.1",
+  "description": "Lightweight AI agent orchestrator with Skill Graph, Memory, Consensus, and MCP",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client/index.js"
+  },
+  "bin": {
+    "zoogent": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "drizzle",
+    "client"
+  ],
+  "scripts": {
+    "build": "tsc && cp -r src/public dist/public",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "node dist/index.js",
+    "mcp": "node dist/mcp.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "tsx --env-file=.env src/db/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node -e \"console.log('\\n  ZooGent installed. To get started:\\n\\n    mkdir my-agents && cd my-agents\\n    zoogent init\\n    zoogent start\\n    claude mcp add zoogent\\n    claude\\n\\n  Then type: help me build an agent team\\n')\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@hono/node-server": "^1.19.11",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "better-auth": "^1.5.5",
+    "better-sqlite3": "^12.8.0",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.12.8",
+    "node-cron": "^4.2.1",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "@types/node-cron": "^3.0.11",
+    "drizzle-kit": "^0.31.9",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.4"
+  }
+}

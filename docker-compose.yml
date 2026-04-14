@@ -1,0 +1,25 @@
+services:
+  zoogent:
+    build: .
+    ports:
+      - "${PORT:-3200}:3200"
+    volumes:
+      - zoogent-data:/app/data
+    environment:
+      # Server
+      - DATABASE_URL=./data/zoogent.db
+      - PORT=3200
+      - SKILLS_DIR=./data/skills
+      # Auth (required for remote access)
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - ZOOGENT_API_KEY=${ZOOGENT_API_KEY}
+      # Agent API keys (add all keys your agents need)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Add more as needed:
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  zoogent-data:

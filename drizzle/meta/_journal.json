@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1775838745610,
+      "tag": "0000_blue_kulan_gath",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775903827118,
+      "tag": "0001_nostalgic_sue_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775912081642,
+      "tag": "0002_sour_patch",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775915985013,
+      "tag": "0003_happy_demogoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775919454899,
+      "tag": "0004_worried_kinsey_walden",
+      "breakpoints": true
+    }
+  ]
+}
