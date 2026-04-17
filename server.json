@@ -6,12 +6,12 @@
     "url": "https://github.com/bepunk/zoogent",
     "source": "github"
   },
-  "version": "0.3.2",
+  "version": "0.3.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "zoogent",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "runtime": "node",
       "transport": {
         "type": "stdio"

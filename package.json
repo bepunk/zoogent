@@ -1,8 +1,9 @@
 {
   "name": "zoogent",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Lightweight AI agent orchestrator with Skill Graph, Memory, Consensus, and MCP",
   "license": "MIT",
+  "mcpName": "io.github.bepunk/zoogent",
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
