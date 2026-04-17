@@ -70,10 +70,10 @@ cd my-agents
 npx zoogent start -d
 ```
 
-Add the MCP server to Claude Code:
+Add the MCP server to Claude Code (`-s user` makes it available in every project):
 
 ```bash
-claude mcp add zoogent -- npx zoogent mcp
+claude mcp add zoogent -s user -- npx zoogent mcp
 ```
 
 Claude Code auto-discovers the local server. Ask Claude to create a team and design your agents.
@@ -83,11 +83,13 @@ Claude Code auto-discovers the local server. Ask Claude to create a team and des
 Deploy ZooGent to a server (see [Deployment](#deployment)). Open the web UI, create an account, go to Settings > generate an API key.
 
 ```bash
-claude mcp add zoogent \
+claude mcp add zoogent -s user \
   -e ZOOGENT_URL=https://your-domain.com \
   -e ZOOGENT_API_KEY=zg_your-key-from-settings \
   -- npx zoogent mcp
 ```
+
+> Without `-s user` the MCP is registered only for the current working directory (local scope) and won't appear in other projects. Use `-s project` instead if you want to commit the config into the repo's `.mcp.json`.
 
 <details>
 <summary>Alternative: configure via .mcp.json</summary>
