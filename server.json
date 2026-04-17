@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bepunk/zoogent",
+  "description": "Lightweight AI agent orchestrator with built-in Architect AI. Multi-team support, web dashboard, 35+ MCP tools.",
+  "repository": {
+    "url": "https://github.com/bepunk/zoogent",
+    "source": "github"
+  },
+  "version": "0.3.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "zoogent",
+      "version": "0.3.2",
+      "runtime": "node",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "URL of the ZooGent server (for remote connections)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "ZOOGENT_URL"
+        },
+        {
+          "description": "API key for authenticating with the ZooGent server (generate in Settings UI)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "ZOOGENT_API_KEY"
+        }
+      ]
+    }
+  ]
+}

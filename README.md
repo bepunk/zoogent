@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.bepunk/zoogent -->
+
 # ZooGent
 
 Lightweight AI agent orchestrator with built-in Architect AI. Multi-team support - run isolated agent teams in a single instance. Describe what you want to automate, get working agents.
@@ -68,17 +70,10 @@ cd my-agents
 npx zoogent start -d
 ```
 
-Add to your `.mcp.json`:
+Add the MCP server to Claude Code:
 
-```json
-{
-  "mcpServers": {
-    "zoogent": {
-      "command": "npx",
-      "args": ["zoogent", "mcp"]
-    }
-  }
-}
+```bash
+claude mcp add zoogent -- npx zoogent mcp
 ```
 
 Claude Code auto-discovers the local server. Ask Claude to create a team and design your agents.
@@ -87,7 +82,15 @@ Claude Code auto-discovers the local server. Ask Claude to create a team and des
 
 Deploy ZooGent to a server (see [Deployment](#deployment)). Open the web UI, create an account, go to Settings > generate an API key.
 
-Add to your `.mcp.json`:
+```bash
+claude mcp add zoogent \
+  -e ZOOGENT_URL=https://your-domain.com \
+  -e ZOOGENT_API_KEY=zg_your-key-from-settings \
+  -- npx zoogent mcp
+```
+
+<details>
+<summary>Alternative: configure via .mcp.json</summary>
 
 ```json
 {
@@ -103,6 +106,7 @@ Add to your `.mcp.json`:
   }
 }
 ```
+</details>
 
 Claude Code connects to the remote server. Create teams, design agents, write code - all through MCP tools. Agents run on the server.
 
