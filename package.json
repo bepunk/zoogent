@@ -28,7 +28,7 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "prepublishOnly": "npm run build",
-    "postinstall": "node -e \"console.log('\\n  ZooGent installed. To get started:\\n\\n    mkdir my-agents && cd my-agents\\n    zoogent init\\n    zoogent start\\n    claude mcp add zoogent\\n    claude\\n\\n  Then type: help me build an agent team\\n')\""
+    "postinstall": "node -e \"console.log('\\n  ZooGent installed. To get started:\\n\\n    mkdir my-agents && cd my-agents\\n    zoogent init\\n    zoogent start\\n    claude mcp add zoogent -s project -- npx zoogent mcp\\n    claude\\n\\n  Then type: help me build an agent team\\n')\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

@@ -70,11 +70,13 @@ cd my-agents
 npx zoogent start -d
 ```
 
-Add the MCP server to Claude Code (`-s user` makes it available in every project):
+Add the MCP server to Claude Code. Run this **from inside the project you want to work in** — each project typically binds to its own ZooGent instance (its own SQLite, teams, agents, API keys), so the MCP config should live with the project:
 
 ```bash
-claude mcp add zoogent -s user -- npx zoogent mcp
+claude mcp add zoogent -s project -- npx zoogent mcp
 ```
+
+`-s project` writes the config to `.mcp.json` in the project root — commit it and teammates who clone the repo get the same MCP setup automatically.
 
 Claude Code auto-discovers the local server. Ask Claude to create a team and design your agents.
 
@@ -82,14 +84,16 @@ Claude Code auto-discovers the local server. Ask Claude to create a team and des
 
 Deploy ZooGent to a server (see [Deployment](#deployment)). Open the web UI, create an account, go to Settings > generate an API key.
 
+Run from inside the project that should connect to this ZooGent instance:
+
 ```bash
-claude mcp add zoogent -s user \
+claude mcp add zoogent -s project \
   -e ZOOGENT_URL=https://your-domain.com \
   -e ZOOGENT_API_KEY=zg_your-key-from-settings \
   -- npx zoogent mcp
 ```
 
-> Without `-s user` the MCP is registered only for the current working directory (local scope) and won't appear in other projects. Use `-s project` instead if you want to commit the config into the repo's `.mcp.json`.
+> Each project can point at its own ZooGent (local or remote), with its own URL and API key. Keeping the config in the project's `.mcp.json` makes that mapping explicit. Use `-s user` instead only if you have a single shared ZooGent instance across all projects.
 
 <details>
 <summary>Alternative: configure via .mcp.json</summary>

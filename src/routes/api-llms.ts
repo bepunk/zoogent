@@ -38,7 +38,14 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
    Then: go to team settings to add your Anthropic API key (per-team setting).
 
 3. MCP integration (for Claude Code, optional):
-   Add to .mcp.json:
+   From inside the project directory:
+   $ claude mcp add zoogent -s project -- npx zoogent mcp
+
+   This writes config to .mcp.json in the project root. Each project binds to
+   its own ZooGent instance (its own SQLite, teams, API keys), so the MCP
+   config belongs with the project.
+
+   Resulting .mcp.json:
    {
      "mcpServers": {
        "zoogent": {
@@ -60,7 +67,14 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
   Add your Anthropic API key in the team's settings (per-team).
 
 ### Phase 2: Develop (local)
-  Add MCP to Claude Code. Create .mcp.json in your project root:
+  Add MCP to Claude Code. From inside the project directory:
+  $ claude mcp add zoogent -s project -- npx zoogent mcp
+
+  -s project writes config to .mcp.json in the project root. Each project
+  binds to its own ZooGent instance — keep the MCP config with the project
+  so the mapping is explicit and teammates get the same setup on clone.
+
+  Resulting .mcp.json:
   {
     "mcpServers": {
       "zoogent": {
@@ -103,7 +117,13 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
   Create owner account at https://your-domain.com/setup.
 
 ### Phase 5: Configure remote server
-  Update .mcp.json to connect MCP to the remote server:
+  From inside the project that should connect to this remote ZooGent:
+  $ claude mcp add zoogent -s project \
+      -e ZOOGENT_URL=https://your-domain.com \
+      -e ZOOGENT_API_KEY=zg_your_key_here \
+      -- npx zoogent mcp
+
+  Resulting .mcp.json:
   {
     "mcpServers": {
       "zoogent": {
