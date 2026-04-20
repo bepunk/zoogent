@@ -1,6 +1,6 @@
 {
   "name": "zoogent",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Lightweight AI agent orchestrator with Skill Graph, Memory, Consensus, and MCP",
   "license": "MIT",
   "mcpName": "io.github.bepunk/zoogent",
