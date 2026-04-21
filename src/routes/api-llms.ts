@@ -87,11 +87,12 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
   MCP requires a teamId to scope all operations to a specific team.
 
   Workflow:
-  1. Design agents (create_agent, scaffold_agent)
-  2. Write skills (create_skill) — stored in DB, scoped to the team
-  3. Write agent code (agents/*.ts)
+  1. Design skills (create_skill) — stored in DB, scoped to the team
+  2. Register agents (create_agent with runtime="typescript" and TypeScript source)
+     Zoogent bundles the source with esbuild and stores it in DB.
+  3. Wire skills to agents (assign_skill)
   4. Test (trigger_agent + get_logs)
-  5. Iterate until agents work correctly
+  5. Iterate: write_agent_code to update code, update_agent to tweak config
 
 ### Phase 3: Prepare for deploy
   Initialize git repo: git init && git add . && git push
@@ -281,10 +282,13 @@ If neither is possible:
 ### 6. CREATE
 Use MCP tools in this order (all operations scoped to a team via teamId):
 1. create_skill - write the knowledge/instructions each agent needs
-2. scaffold_agent - generate boilerplate script + register the agent
+2. create_agent - register the agent. Default runtime is "typescript": pass TS code
+   in the source field and zoogent bundles + stores it atomically. Or omit source
+   and upload later via write_agent_code.
 3. assign_skill - connect skills to agents
-4. update_agent - set goal, model, cronSchedule, budget, env vars
-5. If feedback collector needed - scaffold it too with evaluation skills
+4. update_agent - set goal, model, cronSchedule, budget, env vars (not code)
+5. write_agent_code - update code when iterating (returns esbuild errors if source is bad)
+6. If feedback collector needed - create it too with evaluation skills
 
 ### 7. TEST LOCALLY
 1. trigger_agent - run each agent manually
@@ -397,12 +401,24 @@ All dashboard routes are now scoped to a team via /api/teams/:teamId/...
 
 ### Agents
 
-GET    /api/teams/:teamId/agents              - List all agents in team with status, last run, monthly cost
-GET    /api/teams/:teamId/agents/:id          - Agent details + runs + skills + model + goal
+GET    /api/teams/:teamId/agents              - List all agents in team with status, last run, monthly cost, bundleReady
+GET    /api/teams/:teamId/agents/:id          - Agent details + runs + skills + model + goal + bundle status
 POST   /api/teams/:teamId/agents              - Create agent
-  Body: { id, name, command, args?, type?, model?, goal?, cronSchedule?, env?, budgetMonthlyCents?, wakeOnAssignment? }
-PATCH  /api/teams/:teamId/agents/:id          - Update agent (any field including model, goal, env)
-DELETE /api/teams/:teamId/agents/:id          - Delete agent
+  Body for typescript (default):
+    { id, name, runtime?: "typescript", source?, type?, model?, goal?, cronSchedule?, env?, budgetMonthlyCents?, wakeOnAssignment? }
+  Body for exec runtime:
+    { id, name, runtime: "exec", command, args?, cwd?, type?, model?, goal?, cronSchedule?, env?, budgetMonthlyCents?, wakeOnAssignment? }
+  When source is provided for typescript runtime, zoogent bundles it with esbuild atomically
+  (returns 400 with esbuild error if the source references unknown imports).
+PATCH  /api/teams/:teamId/agents/:id          - Update agent config. Not code — use PUT /code.
+  Cannot change runtime. For typescript agents: command/args/cwd rejected.
+PUT    /api/teams/:teamId/agents/:id/code     - Upload/replace TypeScript source (typescript runtime only)
+  Body: { source: string }
+  Bundles with esbuild. Returns 400 with error on bundle failure (source + error are still stored
+  so get_agent_code shows what you last uploaded).
+GET    /api/teams/:teamId/agents/:id/code     - Read current source + bundle status (typescript runtime only)
+  Returns: { source, bundleHash, bundleError }
+DELETE /api/teams/:teamId/agents/:id          - Delete agent (removes materialized code file)
 POST   /api/teams/:teamId/agents/:id/trigger  - Manual run
 POST   /api/teams/:teamId/agents/:id/enable   - Enable agent (reschedules cron)
 POST   /api/teams/:teamId/agents/:id/disable  - Disable agent (stops if running, unschedules)
@@ -461,28 +477,38 @@ GET    /api/teams/:teamId/knowledge           - List team knowledge entries
 POST   /api/teams/:teamId/knowledge/:id/approve - Approve a draft entry
 POST   /api/teams/:teamId/knowledge/:id/archive - Archive an entry
 
-## MCP Tools (29 total)
+## MCP Tools
 
-When connecting via MCP, you work with a specific team by passing teamId.
-All team-scoped tools require a teamId parameter.
+When connecting via MCP, you work with a specific team (auto-selected on get_started
+or via select_team). Code-related tools apply to runtime="typescript" agents only.
 
-### Onboarding (1)
+### Onboarding (4)
 - get_started: Check ZooGent status and guide through setup or team building. Call this first.
+- list_teams: List all teams
+- create_team: Create a team and auto-select it (name, slug?)
+- select_team: Set the current team (teamId)
+
+### Guide (1)
+- get_agent_guide: Load design methodology. topic in [team-design, agent-patterns, code-generation,
+  skill-writing, debugging, platform-rules], or omit for all. Read code-generation before
+  writing agent code — it lists the blessed deps.
 
 ### Agent Management (9)
-- list_agents: List all agents in a team with status, last run, monthly cost (teamId)
-- get_agent: Get agent details including runs, skills, memories (teamId, agentId)
-- create_agent: Register a new agent (teamId, id, name, command, args, type, model, goal, cronSchedule, env, budget, wakeOnAssignment)
-- update_agent: Update agent configuration (teamId, agentId, any field)
-- delete_agent: Remove an agent (teamId, agentId)
-- enable_agent: Enable and reschedule (teamId, agentId)
-- disable_agent: Disable and stop (teamId, agentId)
-- trigger_agent: Manually trigger a run (teamId, agentId)
-- get_logs: Get stdout/stderr for a run (teamId, agentId, latest or specific runId)
+- list_agents: List agents with status, last run, cost, bundleReady flag
+- get_agent: Agent details + runs + skills + bundle status (id)
+- create_agent: Register a new agent.
+  typescript (default): { id, name, source?, ... } — bundles atomically if source is provided.
+  exec: { id, name, runtime: "exec", command, args?, cwd?, ... } — code lives outside zoogent.
+- update_agent: Update config (not code). Cannot change runtime.
+- delete_agent: Remove agent + its materialized code (id)
+- enable_agent / disable_agent: toggle + reschedule (id)
+- trigger_agent: Manual run (id). Fails if typescript agent has no bundled code.
+- get_logs: stdout/stderr for a run (agentId, runId?)
 
-### Scaffolding (1)
-- scaffold_agent: Generate boilerplate script + register agent + assign skills
-  Params: teamId, id, name, description?, skills?, outputDir?
+### Agent Code (2, typescript runtime)
+- write_agent_code: Upload/replace TypeScript source. Bundles with esbuild. Returns
+  bundle errors on failure (e.g. unknown import not in blessed deps). (id, source)
+- get_agent_code: Read current source + bundle status (id). Returns { source, bundleHash, bundleError }.
 
 ### Skills (6)
 - list_skills: List all skills in a team with metadata (teamId)
@@ -638,27 +664,38 @@ with its own agents, skills, memory, knowledge, and Architect chat.
 - The agent reporting API (/api/report/*) is unchanged — agents report using
   their ZOOGENT_* env vars regardless of team structure.
 
+## Agent Runtimes
+
+Every agent has a runtime:
+
+- typescript (default, recommended): Source lives in zoogent's DB. You upload it via
+  MCP (write_agent_code or create_agent(source)). Zoogent bundles with esbuild targeting
+  Node 24 ESM, externalizing the blessed deps list. Execution: node {materialized.mjs}.
+  Unknown imports fail at upload time with a clear esbuild error. Use this for ~95% of agents.
+
+- exec (escape hatch): Source lives OUTSIDE zoogent. You provide command + args + cwd.
+  Zoogent just spawns the process, injects env vars, captures logs. Use when wrapping
+  binaries, Python/Go scripts, or pre-built tooling. Code deployment is your responsibility
+  (volume mount, git clone, image bake). MCP code tools do not apply.
+
 ## Agent Fields
 
-When creating an agent, these are the fields:
+When creating an agent:
 
-- id: Unique identifier (e.g., "monitor", "summarizer", "classifier")
-- name: Display name for the dashboard
-- goal: Permanent mission statement - what the agent continuously does.
-  Injected as ZOOGENT_AGENT_GOAL. This is the agent's "why".
-- model: AI model the agent uses (e.g., "claude-sonnet-4-6", "gpt-4o-mini").
-  Injected as ZOOGENT_AGENT_MODEL. The agent reads this and calls that model.
-- command: Executable to run (e.g., "npx", "python3", "node", "bash")
-- args: Command arguments as array (e.g., ["tsx", "agents/monitor.ts"])
-- type: One of:
-    "cron" - runs on schedule (needs cronSchedule)
-    "manual" - triggered via dashboard or MCP
-    "long-running" - persistent process (e.g., webhook listener, bot)
-- cronSchedule: Cron expression (e.g., "0 */2 * * *" = every 2 hours)
-- skills: Skill file paths to assign (e.g., ["monitoring/rss.md", "tactics/summarization.md"])
+- id: Unique identifier (alphanumeric + dashes/underscores)
+- name: Display name
+- runtime: "typescript" (default) or "exec"
+- source: [typescript only] Full TypeScript source. Optional at create; upload later via write_agent_code.
+- command, args, cwd: [exec only] What zoogent spawns
+- goal: Permanent mission statement. Injected as ZOOGENT_AGENT_GOAL.
+- model: AI model name. Injected as ZOOGENT_AGENT_MODEL (the agent decides what to do with it).
+- type: "cron" (scheduled) | "manual" (on demand/assignment) | "long-running" (persistent)
+- cronSchedule: Cron expression (e.g., "0 */2 * * *")
+- skills: Skill paths to assign (via assign_skill after create)
 - budgetMonthlyCents: Monthly spending limit in cents. Agent is blocked if exceeded.
 - wakeOnAssignment: If true, agent starts automatically when a task is assigned to it.
 - env: Custom environment variables (e.g., API keys). Encrypted at rest with AES-256-GCM.
+- timeoutSec, graceSec: Run timeout and SIGKILL grace period.
 
 ## TypeScript Agent - Full Example
 

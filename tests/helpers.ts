@@ -11,15 +11,20 @@ export function createTestTeam(name = 'Test Team') {
   return { id, name, slug };
 }
 
-export function createTestAgent(teamId: string, overrides: Partial<{ id: string; name: string; command: string; type: string }> = {}) {
+export function createTestAgent(
+  teamId: string,
+  overrides: Partial<{ id: string; name: string; command: string; type: string; runtime: 'typescript' | 'exec' }> = {},
+) {
   const db = getDb();
   const id = overrides.id || `agent-${randomBytes(4).toString('hex')}`;
+  const runtime = overrides.runtime ?? 'exec'; // legacy behavior: existing tests use echo/command
   db.insert(agents).values({
     id,
     name: overrides.name || id,
     teamId,
-    command: overrides.command || 'echo',
-    args: JSON.stringify(['hello']),
+    runtime,
+    command: runtime === 'exec' ? (overrides.command || 'echo') : null,
+    args: runtime === 'exec' ? JSON.stringify(['hello']) : null,
     type: overrides.type || 'manual',
   }).run();
   return id;

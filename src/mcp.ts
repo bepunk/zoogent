@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
 
 // ─── HTTP Client ─────────────────────────────────────────────────────────────
 
@@ -49,27 +47,33 @@ async function requireTeam() {
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new McpServer(
-  { name: 'zoogent', version: '0.3.0' },
+  { name: 'zoogent', version: '0.4.1' },
   {
-    instructions: `You are connected to ZooGent — an AI agent team orchestrator.
+    instructions: `ZooGent — AI agent team orchestrator.
 
-FIRST: Call list_teams to see available teams, then select_team to pick one.
-If no teams exist, call create_team to create one.
+WORKFLOW (build a team from scratch):
+1. get_started — check connection and current state
+2. create_team or select_team
+3. get_agent_guide("team-design") — read Jobs-Roles-Flows methodology
+4. For each role: create_skill
+5. For each agent: create_agent with TypeScript source
+   (read get_agent_guide("code-generation") for blessed imports + boilerplate)
+6. assign_skill to wire skills to agents
+7. trigger_agent + get_logs to test
+8. Iterate: write_agent_code, update_agent
 
-Before designing agents, call get_agent_guide() to load the design methodology.
+AGENT RUNTIMES:
+- "typescript" (default, recommended): zoogent owns the code. Upload via create_agent or write_agent_code.
+  Zoogent bundles with esbuild and runs via node. Allowed imports are the blessed set
+  (see code-generation guide). Unknown imports fail at upload time with a clear error.
+- "exec" (escape hatch): agent code lives outside zoogent. Provide command + args.
+  Use only when wrapping binaries or non-TS stacks.
 
-YOUR ROLE: Design and manage agent teams. Create agents, write skills, generate code, test, and deploy.
+Default to typescript. It is the fast, LLM-native path.
 
-Each team is isolated — its own agents, skills, memory, knowledge, and API keys.
+Each team is isolated: own agents, skills, memory, API keys, knowledge.
 
-WORKFLOW:
-1. select_team (or create_team)
-2. get_agent_guide("team-design") — learn the Jobs-Roles-Flows methodology
-3. Design the team with the user
-4. create_skill — write instructions for each role
-5. create_agent / scaffold_agent — register agents
-6. trigger_agent + get_logs — test
-7. Iterate until the team works`,
+Call get_started first.`,
   },
 );
 
@@ -78,22 +82,7 @@ WORKFLOW:
 server.tool('get_started', 'Check ZooGent status, list teams, and guide the user through setup. Call this first.', {}, async () => {
   const mode = IS_REMOTE ? 'remote' : 'local';
 
-  // For local mode, check if init was done
-  if (!IS_REMOTE) {
-    const dbPath = process.env.DATABASE_URL || './data/zoogent.db';
-    if (!existsSync(dbPath)) {
-      return text(`ZooGent is not initialized yet.
-
-Run these commands to set it up:
-
-  npx zoogent init
-  npx zoogent start
-
-After that, I can help you build your agent team.`);
-    }
-  }
-
-  // Check if server is reachable
+  // Reachability check
   let serverRunning = false;
   try {
     const res = await fetch(`${BASE}/llms.txt`);
@@ -111,14 +100,13 @@ Check that:
 2. ZOOGENT_URL is correct in your MCP config
 3. ZOOGENT_API_KEY matches the server's key`);
     }
-    return text(`ZooGent is installed but the server is not running.
+    return text(`Cannot reach local ZooGent at ${BASE}.
 
 Run: npx zoogent start
 
-Keep it running in a separate terminal. Once started, I can help you build your agent team.`);
+Keep it running in a separate terminal. Once started, call get_started again.`);
   }
 
-  // List teams
   const { data: teamsList } = await api<any[]>('/api/teams');
   const teams = Array.isArray(teamsList) ? teamsList : [];
 
@@ -130,7 +118,7 @@ Keep it running in a separate terminal. Once started, I can help you build your 
 ${dashboard}
 
 No teams yet. Create one with create_team to get started.
-Then call get_agent_guide() to learn how to design agent teams.`);
+Then call get_agent_guide("team-design") to learn how to design agent teams.`);
   }
 
   // Auto-select if only one team
@@ -144,7 +132,9 @@ ${dashboard}
 
 Team "${teams[0].name}" auto-selected (${agentCount} agent${agentCount !== 1 ? 's' : ''}).
 
-${agentCount === 0 ? `No agents yet. Call get_agent_guide("team-design") to learn how to design a team, then ask the user what they want to automate.` : `Use list_agents to see current agents, or ask the user what they want to change.`}`);
+${agentCount === 0
+      ? `No agents yet. Call get_agent_guide("team-design") to learn how to design a team, then ask the user what they want to automate.`
+      : `Use list_agents to see current agents, or ask the user what they want to change.`}`);
   }
 
   const teamList = teams.map((t: any) => `  - ${t.name} (id: ${t.id}, slug: ${t.slug})`).join('\n');
@@ -174,9 +164,9 @@ server.tool('create_team', 'Create a new team and auto-select it', {
     method: 'POST',
     body: JSON.stringify({ name, slug: teamSlug }),
   });
-  if (!ok) return text(data?.error || 'Failed to create team');
-  currentTeamId = data.id;
-  return text(`Team "${name}" created (id: ${data.id}, slug: ${teamSlug}). Auto-selected.
+  if (!ok) return text((data as any)?.error || 'Failed to create team');
+  currentTeamId = (data as any).id;
+  return text(`Team "${name}" created (id: ${(data as any).id}, slug: ${teamSlug}). Auto-selected.
 
 Next: Call get_agent_guide("team-design") to learn how to design an agent team.`);
 });
@@ -187,99 +177,109 @@ server.tool('select_team', 'Select a team to work with. All subsequent operation
   const { data, ok } = await api(`/api/teams/${teamId}`);
   if (!ok) return text('Team not found. Call list_teams to see available teams.');
   currentTeamId = teamId;
-  return text(`Team "${data.name}" selected. All operations now scoped to this team.`);
+  return text(`Team "${(data as any).name}" selected. All operations now scoped to this team.`);
 });
 
 // ─── Agent Guide ────────────────────────────────────────────────────────────────
 
-server.tool('get_agent_guide', 'Load design methodology and best practices for building agent teams. Call before designing agents.', {
-  topic: z.string().optional().describe('Specific topic: team-design, agent-patterns, code-generation, debugging, skill-writing, platform-rules. Omit for all.'),
+server.tool('get_agent_guide', 'Load design methodology and reference docs. Topics: team-design (Jobs-Roles-Flows), agent-patterns (boilerplate examples), code-generation (blessed deps, SDK API, import examples), skill-writing, debugging, platform-rules. Omit topic to read all. Call before designing agents.', {
+  topic: z.string().optional().describe('Specific topic, or omit for all'),
 }, async ({ topic }) => {
   if (topic) {
     const { data, ok } = await api(`/api/system-skills/system/${topic}.md`);
     if (!ok) return text(`Topic "${topic}" not found. Available: team-design, agent-patterns, code-generation, debugging, skill-writing, platform-rules`);
-    return text(data.content);
+    return text((data as any).content);
   }
   const { data: skillsList } = await api<any[]>('/api/system-skills');
   if (!Array.isArray(skillsList)) return text('Failed to load guide');
   const contents: string[] = [];
   for (const s of skillsList) {
     const { data: full } = await api(`/api/system-skills/${s.path}`);
-    if (full?.content) contents.push(full.content);
+    if ((full as any)?.content) contents.push((full as any).content);
   }
   return text(contents.join('\n\n---\n\n'));
 });
 
 // ─── Agent Management ───────────────────────────────────────────────────────────
 
-server.tool('list_agents', 'List all agents in the selected team with status, last run, and monthly cost', {}, async () => {
+server.tool('list_agents', 'List all agents in the selected team with status, last run, monthly cost, and bundle readiness', {}, async () => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath('/agents'));
   if (!ok) return text('Failed to list agents');
   return json(data);
 });
 
-server.tool('get_agent', 'Get agent details including runs, skills, and memories', {
+server.tool('get_agent', 'Get agent details including runs, skills, and bundle status', {
   id: z.string().describe('Agent ID'),
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}`));
-  if (!ok) return text(data?.error || 'Agent not found');
+  if (!ok) return text((data as any)?.error || 'Agent not found');
   return json(data);
 });
 
-server.tool('create_agent', 'Register a new agent in the selected team', {
-  id: z.string().describe('Unique agent ID (e.g., "scout", "writer")'),
-  name: z.string().describe('Display name'),
-  command: z.string().describe('Command to run (e.g., "npx")'),
-  args: z.array(z.string()).optional().describe('Command arguments (e.g., ["tsx", "agent.ts"])'),
-  cwd: z.string().optional().describe('Working directory'),
-  type: z.enum(['cron', 'long-running', 'manual']).optional(),
-  cronSchedule: z.string().optional().describe('Cron expression (e.g., "0 */2 * * *")'),
-  env: z.record(z.string(), z.string()).optional().describe('Environment variables'),
-  budgetMonthlyCents: z.number().optional(),
-  wakeOnAssignment: z.boolean().optional(),
-  description: z.string().optional(),
-  goal: z.string().optional().describe('Permanent mission/objective for the agent'),
-  model: z.string().optional().describe('AI model the agent uses (e.g., "claude-sonnet-4-6")'),
-  timeoutSec: z.number().optional().describe('Timeout in seconds (0 = no timeout, default 600)'),
-  graceSec: z.number().optional().describe('Grace period before SIGKILL after timeout (default 30)'),
-}, async (params) => {
-  const err = await requireTeam(); if (err) return err;
-  const { data, ok } = await api(teamPath('/agents'), {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-  if (!ok) return text(data?.error || 'Failed to create agent');
-  return text(`Agent "${params.id}" created successfully`);
-});
+server.tool('create_agent',
+  'Register a new agent. Default runtime is "typescript": provide `source` with TS code (zoogent bundles and stores it; the agent is ready to run). Omit source to register the agent and upload code later via write_agent_code. For binaries or non-TS scripts use runtime="exec" with `command` and `args`. After create: assign_skill, then trigger_agent to test.',
+  {
+    id: z.string().describe('Unique agent ID (alphanumeric, dashes, underscores)'),
+    name: z.string().describe('Display name'),
+    runtime: z.enum(['typescript', 'exec']).optional().describe('Default "typescript"'),
+    source: z.string().optional().describe('TypeScript source (typescript runtime). Bundled on create.'),
+    command: z.string().optional().describe('Executable (exec runtime)'),
+    args: z.array(z.string()).optional().describe('Command args (exec runtime)'),
+    cwd: z.string().optional().describe('Working directory (exec runtime)'),
+    type: z.enum(['cron', 'long-running', 'manual']).optional().describe('Default "manual"'),
+    cronSchedule: z.string().optional().describe('Cron expression, e.g. "0 */2 * * *"'),
+    goal: z.string().optional().describe('Permanent mission/objective for the agent'),
+    model: z.string().optional().describe('AI model (e.g. "claude-sonnet-4-6")'),
+    description: z.string().optional(),
+    budgetMonthlyCents: z.number().optional(),
+    wakeOnAssignment: z.boolean().optional(),
+    timeoutSec: z.number().optional().describe('0 = no timeout'),
+    graceSec: z.number().optional(),
+  },
+  async (params) => {
+    const err = await requireTeam(); if (err) return err;
+    const { data, ok } = await api(teamPath('/agents'), {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    if (!ok) {
+      const details = (data as any)?.details;
+      return text(`Failed to create agent: ${(data as any)?.error || 'unknown'}${details ? '\n' + details : ''}`);
+    }
+    return text(`Agent "${params.id}" created (${(data as any).runtime})`);
+  }
+);
 
-server.tool('update_agent', 'Update agent configuration', {
+server.tool('update_agent', 'Update agent configuration (not code — use write_agent_code for source).', {
   id: z.string(),
   name: z.string().optional(), description: z.string().optional(),
-  command: z.string().optional(), args: z.array(z.string()).optional(),
-  cwd: z.string().optional(), type: z.enum(['cron', 'long-running', 'manual']).optional(),
+  goal: z.string().optional(), model: z.string().optional(),
+  type: z.enum(['cron', 'long-running', 'manual']).optional(),
   cronSchedule: z.string().optional(), enabled: z.boolean().optional(),
   budgetMonthlyCents: z.number().optional(), wakeOnAssignment: z.boolean().optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  goal: z.string().optional(), model: z.string().optional(),
   timeoutSec: z.number().optional(), graceSec: z.number().optional(),
+  // exec runtime only
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
 }, async ({ id, ...updates }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}`), {
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
-  if (!ok) return text(data?.error || 'Failed to update agent');
+  if (!ok) return text((data as any)?.error || 'Failed to update agent');
   return text(`Agent "${id}" updated`);
 });
 
-server.tool('delete_agent', 'Remove an agent', {
+server.tool('delete_agent', 'Remove an agent and its code', {
   id: z.string(),
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}`), { method: 'DELETE' });
-  if (!ok) return text(data?.error || 'Failed to delete agent');
+  if (!ok) return text((data as any)?.error || 'Failed to delete agent');
   return text(`Agent "${id}" deleted`);
 });
 
@@ -288,7 +288,7 @@ server.tool('enable_agent', 'Enable an agent and reschedule', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}/enable`), { method: 'POST' });
-  if (!ok) return text(data?.error || 'Failed to enable agent');
+  if (!ok) return text((data as any)?.error || 'Failed to enable agent');
   return text(`Agent "${id}" enabled`);
 });
 
@@ -297,17 +297,17 @@ server.tool('disable_agent', 'Disable an agent and unschedule', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}/disable`), { method: 'POST' });
-  if (!ok) return text(data?.error || 'Failed to disable agent');
+  if (!ok) return text((data as any)?.error || 'Failed to disable agent');
   return text(`Agent "${id}" disabled`);
 });
 
-server.tool('trigger_agent', 'Manually trigger an agent run', {
+server.tool('trigger_agent', 'Manually trigger an agent run. Requires the agent to have runnable code (typescript: uploaded source; exec: command set).', {
   id: z.string(),
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}/trigger`), { method: 'POST' });
-  if (!ok) return text(data?.error || 'Agent not available (disabled, running, or over budget)');
-  return text(`Run started: runId=${data.runId}`);
+  if (!ok) return text((data as any)?.error || 'Agent not available (disabled, running, over budget, or no code)');
+  return text(`Run started: runId=${(data as any).runId}`);
 });
 
 server.tool('get_logs', 'Get stdout/stderr for an agent run', {
@@ -317,17 +317,17 @@ server.tool('get_logs', 'Get stdout/stderr for an agent run', {
   const err = await requireTeam(); if (err) return err;
   if (runId) {
     const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(agentId)}/runs/${runId}`));
-    if (!ok) return text(data?.error || 'Run not found');
+    if (!ok) return text((data as any)?.error || 'Run not found');
     return json({
-      runId: data.id, status: data.status, trigger: data.trigger,
-      startedAt: data.startedAt, durationMs: data.durationMs,
-      exitCode: data.exitCode,
-      stdout: data.stdout || '(empty)', stderr: data.stderr || '(empty)',
+      runId: (data as any).id, status: (data as any).status, trigger: (data as any).trigger,
+      startedAt: (data as any).startedAt, durationMs: (data as any).durationMs,
+      exitCode: (data as any).exitCode,
+      stdout: (data as any).stdout || '(empty)', stderr: (data as any).stderr || '(empty)',
     });
   }
   const { data: runs, ok } = await api(teamPath(`/agents/${encodeURIComponent(agentId)}/runs?limit=1`));
   if (!ok || !Array.isArray(runs) || runs.length === 0) return text('No runs found');
-  const run = runs[0];
+  const run = runs[0] as any;
   return json({
     runId: run.id, status: run.status, trigger: run.trigger,
     startedAt: run.startedAt, durationMs: run.durationMs,
@@ -336,98 +336,37 @@ server.tool('get_logs', 'Get stdout/stderr for an agent run', {
   });
 });
 
-// ─── Scaffolding ────────────────────────────────────────────────────────────────
+// ─── Agent Code (typescript runtime) ────────────────────────────────────────────
 
-server.tool('scaffold_agent', 'Generate a boilerplate agent script, register it in ZooGent, and assign skills', {
-  id: z.string().describe('Agent ID'),
-  name: z.string().describe('Display name'),
-  description: z.string().optional(),
-  skills: z.array(z.string()).optional().describe('Skill paths to assign'),
-  outputDir: z.string().optional().describe('Directory for the generated script (default: ./agents)'),
-}, async (params) => {
-  const err = await requireTeam(); if (err) return err;
-
-  // Register agent via HTTP
-  const { data: existingAgent } = await api(teamPath(`/agents/${encodeURIComponent(params.id)}`));
-  if (!existingAgent || existingAgent.error) {
-    await api(teamPath('/agents'), {
-      method: 'POST',
-      body: JSON.stringify({
-        id: params.id, name: params.name, command: 'node',
-        args: ['--experimental-strip-types', `agents/${params.id}.ts`],
-        type: 'manual', description: params.description ?? null,
-      }),
+server.tool('write_agent_code',
+  'Upload TypeScript source for a typescript-runtime agent. Zoogent bundles with esbuild and replaces the stored code atomically. Returns esbuild errors on failure (e.g. unknown import — not in the blessed deps list). Does not apply to exec-runtime agents. Use to iterate after create_agent.',
+  {
+    id: z.string().describe('Agent ID'),
+    source: z.string().describe('Full TypeScript source code'),
+  },
+  async ({ id, source }) => {
+    const err = await requireTeam(); if (err) return err;
+    const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}/code`), {
+      method: 'PUT',
+      body: JSON.stringify({ source }),
     });
-  }
-
-  // Assign skills via HTTP
-  if (params.skills) {
-    for (const skillPath of params.skills) {
-      await api(teamPath(`/agents/${encodeURIComponent(params.id)}/assign-skill`), {
-        method: 'POST',
-        body: JSON.stringify({ skillPath }),
-      });
+    if (!ok) {
+      const details = (data as any)?.details;
+      return text(`Bundle failed: ${(data as any)?.error || 'unknown'}${details ? '\n' + details : ''}`);
     }
+    const warns = (data as any)?.warnings ?? [];
+    const warnText = warns.length > 0 ? `\nWarnings: ${warns.join('; ')}` : '';
+    return text(`Code uploaded for "${id}" (hash: ${((data as any).hash as string).slice(0, 12)}).${warnText}`);
   }
+);
 
-  // Generate script (local filesystem)
-  const skillImports = (params.skills || [])
-    .map(s => `  const ${s.replace(/[^a-zA-Z0-9]/g, '_')} = loadSkill('${s}');`)
-    .join('\n');
-
-  const script = `import { getMyTasks, checkoutTask, completeTask, reportCost, reportMemory, getMemories, getSkills, getGoal, getTeamKnowledge, loadSkill, reportTeamKnowledge } from 'zoogent/client';
-
-// Agent context (auto-injected by ZooGent)
-const goal = getGoal();                    // Your mission
-const skills = getSkills();                // Required skills content
-const memories = getMemories();            // Past learnings
-const teamKnowledge = getTeamKnowledge();  // Shared team insights
-
-// Additional skills (loaded on-demand)
-${skillImports || '// const extraSkill = loadSkill("path/to/skill.md");'};
-
-async function main() {
-  const tasks = await getMyTasks();
-
-  for (const task of tasks) {
-    const locked = await checkoutTask(task.id);
-    if (!locked) continue;
-
-    try {
-      // TODO: Implement ${params.name} logic here
-      const payload = task.payload ? JSON.parse(task.payload) : {};
-
-      console.log(\`Processing task \${task.id}: \${task.title}\`);
-
-      // Report cost after AI calls
-      // await reportCost({ model: 'claude-sonnet-4-6', inputTokens: 0, outputTokens: 0, costCents: 0 });
-
-      // Report learnings
-      // await reportMemory({ content: 'what I learned', importance: 5, tags: ['tag'] });
-
-      await completeTask(task.id, JSON.stringify({ status: 'done' }));
-    } catch (err) {
-      console.error(\`Task \${task.id} failed:\`, err);
-      await completeTask(task.id, JSON.stringify({ error: String(err) }));
-    }
-  }
-}
-
-main().catch(console.error);
-`;
-
-  const outDir = params.outputDir || './agents';
-  const outPath = resolve(outDir, `${params.id}.ts`);
-
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-
-  if (existsSync(outPath)) {
-    return text(`Agent "${params.id}" registered. Script already exists at ${outPath}, not overwritten.`);
-  }
-
-  writeFileSync(outPath, script);
-
-  return text(`Agent "${params.id}" scaffolded:\n- Registered in ZooGent\n- Script: ${outPath}\n- Skills: ${(params.skills || []).join(', ') || 'none'}\n\nEdit the script, then run: trigger_agent("${params.id}")`);
+server.tool('get_agent_code', 'Read the current TypeScript source and bundle status for an agent. Use to inspect before editing.', {
+  id: z.string().describe('Agent ID'),
+}, async ({ id }) => {
+  const err = await requireTeam(); if (err) return err;
+  const { data, ok } = await api(teamPath(`/agents/${encodeURIComponent(id)}/code`));
+  if (!ok) return text((data as any)?.error || 'Failed to get code');
+  return json(data);
 });
 
 // ─── Skills ─────────────────────────────────────────────────────────────────────
@@ -444,7 +383,7 @@ server.tool('get_skill', 'Get skill content and metadata', {
 }, async ({ path: skillPath }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/skills/${skillPath}`));
-  if (!ok) return text(data?.error || 'Skill not found');
+  if (!ok) return text((data as any)?.error || 'Skill not found');
   return json(data);
 });
 
@@ -463,7 +402,7 @@ server.tool('create_skill', 'Create a new skill in the selected team', {
     method: 'POST',
     body: JSON.stringify({ path: params.path, name: params.name, description: params.description, content: fullContent, category: params.category, related: params.related }),
   });
-  if (!ok) return text(data?.error || 'Failed to create skill');
+  if (!ok) return text((data as any)?.error || 'Failed to create skill');
   return text(`Skill created: ${params.path}`);
 });
 
@@ -475,7 +414,7 @@ server.tool('update_skill', 'Update skill content', {
     method: 'PUT',
     body: JSON.stringify({ content }),
   });
-  if (!ok) return text(data?.error || 'Failed to update skill');
+  if (!ok) return text((data as any)?.error || 'Failed to update skill');
   return text(`Skill updated: ${skillPath}`);
 });
 
@@ -488,7 +427,7 @@ server.tool('assign_skill', 'Assign a skill to an agent', {
     body: JSON.stringify({ skillPath }),
   });
   if (status === 409) return text('Skill already assigned');
-  if (!ok) return text(data?.error || 'Failed to assign skill');
+  if (!ok) return text((data as any)?.error || 'Failed to assign skill');
   return text(`Skill "${skillPath}" assigned to "${agentId}"`);
 });
 
@@ -500,7 +439,7 @@ server.tool('unassign_skill', 'Remove a skill from an agent', {
     method: 'POST',
     body: JSON.stringify({ skillPath }),
   });
-  if (!ok) return text(data?.error || 'Failed to unassign skill');
+  if (!ok) return text((data as any)?.error || 'Failed to unassign skill');
   return text(`Skill "${skillPath}" removed from "${agentId}"`);
 });
 
@@ -530,8 +469,8 @@ server.tool('add_memory', 'Add a memory entry for an agent', {
     method: 'POST',
     body: JSON.stringify(params),
   });
-  if (!ok) return text(data?.error || 'Failed to add memory');
-  return text(`Memory added: id=${data.id}`);
+  if (!ok) return text((data as any)?.error || 'Failed to add memory');
+  return text(`Memory added: id=${(data as any).id}`);
 });
 
 server.tool('update_memory', 'Update an existing memory', {
@@ -543,7 +482,7 @@ server.tool('update_memory', 'Update an existing memory', {
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
-  if (!ok) return text(data?.error || 'Failed to update memory');
+  if (!ok) return text((data as any)?.error || 'Failed to update memory');
   return text(`Memory ${id} updated`);
 });
 
@@ -552,7 +491,7 @@ server.tool('delete_memory', 'Delete a memory entry', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/memory/${id}`), { method: 'DELETE' });
-  if (!ok) return text(data?.error || 'Failed to delete memory');
+  if (!ok) return text((data as any)?.error || 'Failed to delete memory');
   return text(`Memory ${id} deleted`);
 });
 
@@ -570,8 +509,8 @@ server.tool('create_task', 'Create a task for an agent', {
     method: 'POST',
     body: JSON.stringify(params),
   });
-  if (!ok) return text(data?.error || 'Failed to create task');
-  return text(`Task created: id=${data.id}`);
+  if (!ok) return text((data as any)?.error || 'Failed to create task');
+  return text(`Task created: id=${(data as any).id}`);
 });
 
 server.tool('list_tasks', 'List tasks, optionally filtered', {
@@ -591,7 +530,7 @@ server.tool('get_task', 'Get task details including evaluations', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/tasks/${id}`));
-  if (!ok) return text(data?.error || 'Task not found');
+  if (!ok) return text((data as any)?.error || 'Task not found');
   return json(data);
 });
 
@@ -635,7 +574,7 @@ server.tool('approve_knowledge', 'Approve a draft team knowledge entry', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/knowledge/${id}/approve`), { method: 'POST' });
-  if (!ok) return text(data?.error || 'Failed to approve');
+  if (!ok) return text((data as any)?.error || 'Failed to approve');
   return text(`Knowledge ${id} approved`);
 });
 
@@ -644,7 +583,7 @@ server.tool('archive_knowledge', 'Archive a team knowledge entry', {
 }, async ({ id }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/knowledge/${id}/archive`), { method: 'POST' });
-  if (!ok) return text(data?.error || 'Failed to archive');
+  if (!ok) return text((data as any)?.error || 'Failed to archive');
   return text(`Knowledge ${id} archived`);
 });
 
@@ -655,14 +594,14 @@ server.tool('list_integrations', 'List integrations for an agent (credentials ma
 }, async ({ agentId }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${agentId}/integrations`));
-  if (!ok) return text(data?.error || 'Failed to list integrations');
+  if (!ok) return text((data as any)?.error || 'Failed to list integrations');
   return json(data);
 });
 
-server.tool('create_integration', 'Add an integration (3rd party API key) to an agent', {
+server.tool('create_integration', 'Add an integration (3rd party API key) to an agent. Env vars are injected on spawn as INTEGRATION_{NAME}_{FIELD}.', {
   agentId: z.string(),
   provider: z.string().describe('Provider type: gmail, google_maps, hunter_io, telegram, tavily, custom'),
-  name: z.string().describe('Unique slug for this integration (e.g. gmail_support). Used as env var prefix: INTEGRATION_{NAME}_{FIELD}'),
+  name: z.string().describe('Unique slug for this integration (lowercase alphanumeric + underscore)'),
   credentials: z.record(z.string(), z.string()).describe('Key-value credentials object, e.g. { "apiKey": "sk-..." }'),
 }, async ({ agentId, provider, name, credentials }) => {
   const err = await requireTeam(); if (err) return err;
@@ -670,7 +609,7 @@ server.tool('create_integration', 'Add an integration (3rd party API key) to an 
     method: 'POST',
     body: JSON.stringify({ provider, name, credentials }),
   });
-  if (!ok) return text(data?.error || 'Failed to create integration');
+  if (!ok) return text((data as any)?.error || 'Failed to create integration');
   return json(data);
 });
 
@@ -680,7 +619,7 @@ server.tool('delete_integration', 'Remove an integration from an agent', {
 }, async ({ agentId, integrationId }) => {
   const err = await requireTeam(); if (err) return err;
   const { data, ok } = await api(teamPath(`/agents/${agentId}/integrations/${integrationId}`), { method: 'DELETE' });
-  if (!ok) return text(data?.error || 'Failed to delete integration');
+  if (!ok) return text((data as any)?.error || 'Failed to delete integration');
   return text('Integration deleted');
 });
 

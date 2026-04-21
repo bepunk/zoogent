@@ -7,7 +7,10 @@ import { startOfMonth } from '../lib/time.js';
 import { getTeamMonthlySpend } from './cost-tracker.js';
 import { buildMemoryInjection } from '../lib/memory.js';
 import { loadSkills } from '../lib/skills.js';
-import { resolve } from 'node:path';
+import { materializeAgentCode } from '../lib/agent-code.js';
+import { getZoogentRoot } from '../lib/agent-bundler.js';
+import { dirname, resolve } from 'node:path';
+import { delimiter } from 'node:path';
 import { config } from '../lib/config.js';
 
 const MAX_LOG_BYTES = 50 * 1024; // 50KB
@@ -56,6 +59,24 @@ export async function startAgent(
     console.log(`[process-manager] Agent ${agentId} is disabled, skipping`);
     runningProcesses.delete(agentId);
     return null;
+  }
+
+  // Runtime validation — fail fast before creating a run record
+  if (agent.runtime === 'typescript') {
+    if (!agent.bundle || agent.bundleError) {
+      const reason = agent.bundleError
+        ? `Bundle error: ${agent.bundleError}`
+        : 'No code uploaded. Use write_agent_code (MCP) or PUT /agents/:id/code (HTTP).';
+      console.log(`[process-manager] Agent ${agentId} not runnable: ${reason}`);
+      runningProcesses.delete(agentId);
+      return null;
+    }
+  } else if (agent.runtime === 'exec') {
+    if (!agent.command) {
+      console.log(`[process-manager] Agent ${agentId} runtime=exec but command is null`);
+      runningProcesses.delete(agentId);
+      return null;
+    }
   }
 
   // Budget check
@@ -204,14 +225,47 @@ export async function startAgent(
     );
   }
 
-  // Parse command and args
-  const args: string[] = agent.args ? JSON.parse(agent.args) : [];
-  const cwd = agent.cwd || process.cwd();
+  // Resolve executable + args based on runtime
+  let spawnCommand: string;
+  let spawnArgs: string[];
+  let spawnCwd: string;
 
-  console.log(`[process-manager] Starting ${agentId}: ${agent.command} ${args.join(' ')}`);
+  if (agent.runtime === 'typescript') {
+    // Materialize bundle to disk, run with node
+    let bundlePath: string;
+    try {
+      bundlePath = materializeAgentCode(agentId);
+    } catch (err) {
+      console.error(`[process-manager] Failed to materialize code for ${agentId}:`, err);
+      db.update(agentRuns).set({
+        status: 'error',
+        finishedAt: new Date(),
+        stderr: `Failed to materialize bundle: ${String(err)}`,
+      }).where(eq(agentRuns.id, run.id)).run();
+      runningProcesses.delete(agentId);
+      return null;
+    }
+    spawnCommand = process.execPath; // node
+    spawnArgs = [bundlePath];
+    spawnCwd = dirname(bundlePath);
 
-  const child = spawn(agent.command, args, {
-    cwd,
+    // Ensure the child can resolve blessed deps from zoogent's node_modules,
+    // even when dataDir is outside the project tree (Docker volume, etc).
+    const zoogentModules = resolve(getZoogentRoot(), 'node_modules');
+    const existingNodePath = childEnv.NODE_PATH;
+    childEnv.NODE_PATH = existingNodePath
+      ? `${zoogentModules}${delimiter}${existingNodePath}`
+      : zoogentModules;
+  } else {
+    spawnCommand = agent.command!;
+    spawnArgs = agent.args ? JSON.parse(agent.args) : [];
+    spawnCwd = agent.cwd || process.cwd();
+  }
+
+  console.log(`[process-manager] Starting ${agentId} (${agent.runtime}): ${spawnCommand} ${spawnArgs.join(' ')}`);
+
+  const child = spawn(spawnCommand, spawnArgs, {
+    cwd: spawnCwd,
     env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

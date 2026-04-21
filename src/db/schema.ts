@@ -103,11 +103,16 @@ export const agents = sqliteTable('agents', {
   goal: text('goal'),
   model: text('model'),
   type: text('type', { enum: ['cron', 'long-running', 'manual'] }).notNull().default('manual'),
-  command: text('command').notNull(),
-  args: text('args'), // JSON array
-  cwd: text('cwd'),
+  runtime: text('runtime', { enum: ['typescript', 'exec'] }).notNull().default('typescript'),
+  source: text('source'),           // typescript runtime: TS source code
+  bundle: text('bundle'),           // typescript runtime: esbuild output (.mjs)
+  bundleHash: text('bundle_hash'),  // sha256 of bundle for materialize skip
+  bundleError: text('bundle_error'),// last esbuild error if any
+  command: text('command'),         // exec runtime: executable path
+  args: text('args'),               // exec runtime: JSON array of args
+  cwd: text('cwd'),                 // exec runtime: working directory
   cronSchedule: text('cron_schedule'),
-  env: text('env'), // JSON object, encrypted at rest
+  env: text('env'),                 // JSON object, encrypted at rest
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   budgetMonthlyCents: integer('budget_monthly_cents'),
   parentAgentId: text('parent_agent_id').references((): any => agents.id),
@@ -119,6 +124,7 @@ export const agents = sqliteTable('agents', {
 }, (table) => [
   index('idx_agents_enabled').on(table.enabled),
   index('idx_agents_team_id').on(table.teamId),
+  index('idx_agents_runtime').on(table.runtime),
 ]);
 
 export const agentRuns = sqliteTable('agent_runs', {

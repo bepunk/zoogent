@@ -1,4 +1,4 @@
-# CLAUDE.md - ZooGent v0.3
+# CLAUDE.md - ZooGent v0.4
 
 ## What is ZooGent
 
@@ -6,11 +6,27 @@ Lightweight AI agent orchestrator with built-in Architect AI. Multi-team support
 
 Two UX paths:
 1. **Chat UI** (main) — Architect AI at `/teams/:slug/chat` designs teams, writes code, manages agents
-2. **MCP** (dev path) — 35+ tools for Claude Code, team-scoped, supports local and remote servers
+2. **MCP** (dev path) — ~30 tools for Claude Code, team-scoped, supports local and remote servers. Agent code flows through MCP: `create_agent` with `source` (bundled atomically) or separate `write_agent_code` for iteration.
+
+## Agent Runtime Model (v0.4)
+
+Two runtimes:
+- **`typescript`** (default, 95% of agents): Source lives in `agents.source` column. On upload, zoogent bundles with esbuild (blessed deps list in `src/lib/agent-bundler.ts`) and stores `source + bundle + bundleHash`. Process manager materializes `{dataDir}/teams/{teamId}/agents/{id}.mjs` on spawn (skipped if hash matches marker file) and runs `node {path}` with `NODE_PATH` set to zoogent's `node_modules` (so blessed externalized deps resolve).
+- **`exec`** (escape hatch): Provides `command` + `args` + `cwd`. Used for wrapping binaries / Python / Go / shell. Code is NOT managed through MCP. CRUD via `command` PATCH fields applies only here.
+
+Code is never written to the local filesystem of the MCP client. All `write_agent_code` / `create_agent({ source })` calls upload through HTTP to the zoogent server and are persisted in SQLite. This means the same MCP flow works against local and remote zoogent servers identically.
+
+Invariants (enforced at route + architect level):
+- `runtime='typescript'` → `source` required for run; `command/args/cwd` null.
+- `runtime='exec'` → `command` required; `source/bundle` null.
+- `runtime` cannot be changed after creation.
+- `source` cannot be updated via PATCH (use PUT /code or MCP `write_agent_code`).
+
+Bundle errors: if esbuild fails, the source is still persisted along with `bundleError`, and `bundle`/`bundleHash` stay null. The agent cannot run until a clean bundle is produced. MCP returns the esbuild error in the tool response.
 
 ## Tech Stack
 
-- **Runtime**: Node.js 24 + TypeScript (tsx for agents, tsc for package build)
+- **Runtime**: Node.js 24 + TypeScript. Zoogent server built with `tsc`. Typescript agent source bundled with `esbuild` (in-process) on upload and executed with `node` (no tsx at runtime).
 - **HTTP**: Hono + @hono/node-server (JSX SSR with `html` helper for inline scripts)
 - **DB**: SQLite (better-sqlite3, WAL mode) + Drizzle ORM + FTS5 for memory search
 - **Auth**: Better Auth (email+password, session cookies). Unified auth middleware.
@@ -28,18 +44,21 @@ src/
   mcp.ts                - MCP server (team-scoped tools, HTTP client, get_agent_guide, instructions)
   public/styles.css     - All CSS (themes, cards, chat bubbles, tool blocks)
   db/
-    schema.ts           - Drizzle schema (23 tables: 4 auth + 19 app)
+    schema.ts           - Drizzle schema (23 tables: 4 auth + 19 app). `agents` carries runtime + source + bundle + bundleHash + bundleError.
     index.ts            - SQLite connection + WAL + FTS5 init + migrations
     seed.ts             - Demo agents
     seed-skills.ts      - System skills for Architect AI (6 skills in system_skills table)
   core/
-    architect.ts        - Architect AI: Claude + 9 function calling tools + agentic loop
-    process-manager.ts  - Spawn, env inject, log capture/flush, timeout, orphan cleanup, self-healing
+    architect.ts        - Architect AI: Claude + 10 function calling tools (create_agent, update_agent, write_agent_code, get_agent_code, ...) + agentic loop
+    process-manager.ts  - Spawn (runtime-aware), env inject, log capture/flush, timeout, orphan cleanup, self-healing
     scheduler.ts        - node-cron per agent
     cost-tracker.ts     - Cost aggregation queries
     consensus.ts        - Multi-agent evaluation
+  lib/
+    agent-bundler.ts    - esbuild wrapper; BLESSED_DEPENDENCIES list; externalizes blessed deps; returns { bundle, hash, error }. Walks up to find zoogent root for RESOLVE_DIR + NODE_PATH.
+    agent-code.ts       - setAgentCode/getAgentCode/materializeAgentCode/removeAgentCodeFile. Materialization uses sha256 marker file to skip re-writes.
   routes/
-    api-agents.ts       - Agent CRUD + assign/unassign skill + agent store + integrations (unified auth)
+    api-agents.ts       - Agent CRUD + PUT/GET /code + assign/unassign skill + agent store + integrations (unified auth)
     api-chat.ts         - POST /api/teams/:teamId/chat (SSE streaming) + history (unified auth)
     api-report.ts       - Cost/memory/heartbeat/knowledge/store reporting (unified auth)
     api-tasks.ts        - Task broker (unified auth)
@@ -124,8 +143,8 @@ zoogent mcp            # Start MCP server (stdio)
 - Team sub-nav: Architect / Agents / Tasks / Costs / Skills / Memory / Knowledge / Settings
 
 ### Architect AI (`core/architect.ts`)
-- Claude Sonnet with 9 function calling tools
-- Tools: create_agent, update_agent, create_skill, assign_skill, list_agents, list_skills, trigger_agent, get_logs, write_agent_code
+- Claude Sonnet with 10 function calling tools
+- Tools: create_agent (runtime+source), update_agent, create_skill, assign_skill, list_agents, list_skills, trigger_agent, get_logs, write_agent_code (via setAgentCode → bundle → DB), get_agent_code
 - System prompt built from `system_skills` table + current agent state for the team
 - Lists only agents/skills belonging to the team
 - Agentic loop: multiple tool_use blocks → collect all → send tool_results as one user message
@@ -217,7 +236,8 @@ zoogent mcp            # Start MCP server (stdio)
 
 23 tables: 4 auth (Better Auth) + 19 app:
 - `teams`, `team_members`, `team_settings`
-- `agents` (has teamId), `agent_runs`, `cost_events`, `agent_tasks`, `agent_connections`
+- `agents` (has teamId, runtime, source, bundle, bundleHash, bundleError; command/args/cwd nullable — only set for runtime='exec')
+- `agent_runs`, `cost_events`, `agent_tasks`
 - `agent_skills`, `skills` (has teamId, has `content`, no `internal`)
 - `agent_memories`, `agent_evaluations`, `team_knowledge` (has teamId)
 - `agent_store` (key-value per agent)
@@ -239,7 +259,7 @@ Migrations in `drizzle/` — applied on `start` via `runMigrations()`.
 - `/api/report` — Agent-side API (cost, memory, heartbeat, knowledge, trigger, skill load, store)
 
 ### Team-scoped routes (team middleware validates teamId)
-- `/api/teams/:teamId/agents` — Agent CRUD + trigger + enable/disable + runs + assign-skill + store + integrations
+- `/api/teams/:teamId/agents` — Agent CRUD (POST accepts runtime + source or command) + PUT/GET /:id/code + trigger + enable/disable + runs + assign-skill + store + integrations
 - `/api/teams/:teamId/chat` — POST (SSE stream) + GET/DELETE history
 - `/api/teams/:teamId/tasks` — CRUD + checkout + evaluate
 - `/api/teams/:teamId/skills` — CRUD from DB
