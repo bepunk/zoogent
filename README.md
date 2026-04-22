@@ -211,42 +211,34 @@ cd my-agents
 npx zoogent start -d
 ```
 
-### Docker
+### Docker / Dokploy / Railway
 
-**Dockerfile:**
-```dockerfile
-FROM node:24-slim
-WORKDIR /app
-RUN echo '{"name":"app","private":true,"type":"module","dependencies":{"zoogent":"*","@anthropic-ai/sdk":"*"}}' > package.json && npm install
-RUN mkdir -p /app/data
-ENV DATABASE_URL=./data/zoogent.db PORT=3200
-EXPOSE 3200
-CMD ["sh", "-c", "npx zoogent init && npx zoogent start"]
-```
+No repository needed. Paste this compose into your hosting platform (Dokploy, Railway, etc.) and deploy.
 
-**docker-compose.yml:**
 ```yaml
 services:
   app:
-    build: .
+    image: node:24-slim
+    working_dir: /app
+    command: sh -c "npm install zoogent@0.4.2 @anthropic-ai/sdk && npx zoogent init && npx zoogent start"
     expose:
-     - "3200"
+      - "3200"
     environment:
-     - DATABASE_URL=./data/zoogent.db
-     - PORT=3200
-     - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-     - BETTER_AUTH_URL=${BETTER_AUTH_URL}
-      # ZOOGENT_API_KEY - generate in Settings UI after first login
-      # ANTHROPIC_API_KEY - per-team, set in Team Settings UI
+      - DATABASE_URL=./data/zoogent.db
+      - PORT=3200
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
     volumes:
-     - zoogent-data:/app/data
+      - zoogent-data:/app/data
     restart: unless-stopped
 
 volumes:
   zoogent-data:
 ```
 
-All env vars use `${VAR}` syntax - set actual values in your hosting platform (Dokploy, Railway, etc.).
+Set `BETTER_AUTH_SECRET` (generate: `openssl rand -hex 32`) and `BETTER_AUTH_URL` (your public URL) in the platform's environment settings.
+
+To upgrade ZooGent: change `zoogent@0.4.2` to the new version and redeploy.
 
 ### Required Environment Variables
 

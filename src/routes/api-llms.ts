@@ -95,11 +95,8 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
   5. Iterate: write_agent_code to update code, update_agent to tweak config
 
 ### Phase 3: Prepare for deploy
-  Initialize git repo: git init && git add . && git push
-  Create Dockerfile and docker-compose.yml (see "Deployment - Docker" section below).
-
-  CRITICAL: ALL env vars must be in docker-compose.yml using \${VAR} syntax.
-  The hosting platform injects actual values at runtime.
+  No repository needed. Use the inline docker-compose.yml from the "Deployment - Docker" section.
+  Paste it into your hosting platform (Dokploy, Railway, etc.) and set env vars.
 
   Required env vars:
   - BETTER_AUTH_SECRET — auth session secret (openssl rand -hex 32)
@@ -112,8 +109,8 @@ Focus on BUILDING: creating agents, writing skills, writing code, testing, deplo
   4. Agent integrations (Gmail, Telegram, etc.) are managed per-agent in the UI
 
 ### Phase 4: Deploy
-  Push to hosting platform (Dokploy, Railway, etc.).
-  Set all env vars in the platform's environment settings.
+  Paste the compose file into your hosting platform (Dokploy, Railway, etc.).
+  Set BETTER_AUTH_SECRET and BETTER_AUTH_URL in the platform's environment settings.
   Verify: https://your-domain.com/llms.txt should respond.
   Create owner account at https://your-domain.com/setup.
 
@@ -298,7 +295,7 @@ Use MCP tools in this order (all operations scoped to a team via teamId):
 
 ### 8. DEPLOY (if user wants a server)
 If the user said they want to deploy:
-1. Help write docker-compose.yml
+1. Give them the inline docker-compose.yml from the Deployment section — no repo needed
 2. Help set up Dokploy or direct Docker deployment
 3. Configure API keys in team settings (ANTHROPIC_API_KEY is per-team)
 4. Verify the team works on the server
@@ -1259,28 +1256,17 @@ Note: ANTHROPIC_API_KEY is now per-team (stored in team_settings), so it does no
 in docker-compose.yml unless agents read it directly from process.env. The process-manager
 injects it from team settings automatically.
 
-### Dockerfile
-
-\`\`\`dockerfile
-FROM node:24-slim
-WORKDIR /app
-RUN npm install -g zoogent
-RUN mkdir -p /app/data
-ENV DATABASE_URL=./data/zoogent.db PORT=3200
-EXPOSE 3200
-CMD ["sh", "-c", "npx zoogent init && npx zoogent start"]
-\`\`\`
-
-No source code needed in the image. ZooGent installs from npm.
-Agents and skills are created via the Chat UI (/teams/:slug/chat) after deployment.
-For dev-path deployments with custom agent code, add COPY agents/ agents/ to the Dockerfile.
-
 ### docker-compose.yml
+
+No repository or Dockerfile needed. Paste this directly into Dokploy, Railway, or any
+platform that accepts inline compose files.
 
 \`\`\`yaml
 services:
   app:
-    build: .
+    image: node:24-slim
+    working_dir: /app
+    command: sh -c "npm install zoogent@VERSION @anthropic-ai/sdk && npx zoogent init && npx zoogent start"
     expose:
       - "3200"
     volumes:
@@ -1291,7 +1277,6 @@ services:
       - PORT=3200
       - BETTER_AUTH_SECRET=\${BETTER_AUTH_SECRET}
       - BETTER_AUTH_URL=\${BETTER_AUTH_URL}
-      - ZOOGENT_API_KEY=\${ZOOGENT_API_KEY}
       # --- Agent API keys (add keys your agents need from process.env) ---
       # - OPENAI_API_KEY=\${OPENAI_API_KEY}
       # Note: ANTHROPIC_API_KEY is per-team (set in team settings UI)
@@ -1305,6 +1290,9 @@ services:
 volumes:
   zoogent-data:
 \`\`\`
+
+Replace VERSION with the current ZooGent version (e.g. zoogent@0.4.2).
+To upgrade: change the version number and redeploy — the container recreates and reinstalls.
 
 ### Required env vars for the hosting platform
 
