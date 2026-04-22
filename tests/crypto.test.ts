@@ -88,13 +88,13 @@ describe('Crypto', () => {
   });
 
   describe('maskValue', () => {
-    it('masks long values showing first 4 and last 3 chars', () => {
-      expect(maskValue('sk-ant-api03-longkey')).toBe('sk-a***key');
+    it('masks long values showing last 5 chars', () => {
+      expect(maskValue('sk-ant-api03-longkey')).toBe('•••••ngkey');
     });
 
-    it('fully masks short values (<=8 chars)', () => {
-      expect(maskValue('abc')).toBe('***');
-      expect(maskValue('12345678')).toBe('***');
+    it('fully masks short values (<=5 chars)', () => {
+      expect(maskValue('abc')).toBe('•••••');
+      expect(maskValue('12345')).toBe('•••••');
     });
   });
 });

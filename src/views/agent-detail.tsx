@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { Layout } from './layout.js';
-import { formatCents, timeAgo, formatDuration } from '../lib/time.js';
+import { formatUsd, timeAgo, formatDuration } from '../lib/time.js';
 
 interface Integration {
   id: string;
@@ -82,11 +82,11 @@ export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, skills, mem
         <div class="card" style="padding: 22px 26px;">
           <div class="stat-label">Monthly Spend</div>
           <div class="font-display" style={`font-size: 20px; font-weight: 700; margin-top: 6px; color: var(--warning);`}>
-            {formatCents(monthlySpendCents)}
+            {formatUsd(monthlySpendCents)}
           </div>
           {agent.budgetMonthlyCents && (
             <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-              of {formatCents(agent.budgetMonthlyCents)} budget
+              of {formatUsd(agent.budgetMonthlyCents)} budget
             </div>
           )}
         </div>

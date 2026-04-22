@@ -151,8 +151,8 @@ export function sanitizeLogs(output: string, envVars?: Record<string, string>): 
 // ─── Mask for UI Display ────────────────────────────────────────────────────────
 
 export function maskValue(value: string): string {
-  if (value.length <= 8) return '***';
-  return `${value.slice(0, 4)}***${value.slice(-3)}`;
+  if (value.length <= 5) return '•••••';
+  return `•••••${value.slice(-5)}`;
 }
 
 // ─── Credential Masking ────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ export function maskValue(value: string): string {
 export function maskCredentials(creds: Record<string, string>): Record<string, string> {
   const masked: Record<string, string> = {};
   for (const [k, v] of Object.entries(creds)) {
-    masked[k] = v.length > 4 ? v.slice(0, 4) + '••••' : '••••';
+    masked[k] = maskValue(v);
   }
   return masked;
 }

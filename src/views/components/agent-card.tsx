@@ -1,5 +1,5 @@
 import type { FC } from 'hono/jsx';
-import { formatCents, timeAgo, formatDuration } from '../../lib/time.js';
+import { formatUsd, timeAgo, formatDuration } from '../../lib/time.js';
 
 interface AgentCardProps {
   id: string;
@@ -105,7 +105,7 @@ export const AgentCard: FC<AgentCardProps> = (props) => {
           {/* Footer: cost + budget */}
           <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--border);">
             <span style="font-size: 15px; color: var(--text-secondary); font-weight: 600;">
-              {formatCents(props.monthlySpendCents)}
+              {formatUsd(props.monthlySpendCents)}
               <span style="color: var(--text-muted); font-weight: 400;"> this month</span>
             </span>
             {budgetPercent !== null && (

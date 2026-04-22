@@ -6,6 +6,7 @@ interface TeamSettingsPageProps {
   teamSlug: string;
   teamName: string;
   hasAnthropicKey: boolean;
+  anthropicKeyMasked: string | null;
   autoApproveKnowledge: boolean;
   teamBudgetCents: number | null;
   teamSpentCents: number;
@@ -13,7 +14,7 @@ interface TeamSettingsPageProps {
   error?: string;
 }
 
-export const TeamSettingsPage: FC<TeamSettingsPageProps> = ({ teamBase, teamSlug, teamName, hasAnthropicKey, autoApproveKnowledge, teamBudgetCents, teamSpentCents, message, error }) => {
+export const TeamSettingsPage: FC<TeamSettingsPageProps> = ({ teamBase, teamSlug, teamName, hasAnthropicKey, anthropicKeyMasked, autoApproveKnowledge, teamBudgetCents, teamSpentCents, message, error }) => {
   return (
     <Layout title="Team Settings" currentPath={`${teamBase}/settings`} teamSlug={teamSlug} teamName={teamName}>
       <div class="animate-in" style="margin-bottom: 32px;">
@@ -53,8 +54,8 @@ export const TeamSettingsPage: FC<TeamSettingsPageProps> = ({ teamBase, teamSlug
             <button type="submit" class="btn btn-primary" style="padding: 10px 24px;">
               {hasAnthropicKey ? 'Update Key' : 'Save Key'}
             </button>
-            {hasAnthropicKey && (
-              <span style="color: var(--text-muted); font-size: 13px;">Key is saved and encrypted</span>
+            {hasAnthropicKey && anthropicKeyMasked && (
+              <span style="color: var(--text-muted); font-size: 13px; font-family: 'JetBrains Mono', monospace;">{anthropicKeyMasked}</span>
             )}
           </div>
         </form>

@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { Layout } from './layout.js';
-import { formatCents } from '../lib/time.js';
+import { formatUsd } from '../lib/time.js';
 
 interface CostDashboardProps {
   summary: {
@@ -48,7 +48,7 @@ export const CostDashboardPage: FC<CostDashboardProps> = ({ summary, days, teamB
                 <div class="card" style="padding: 18px 24px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <a href={`${teamBase}/agents/${a.agentId}`} class="font-display" style="font-size: 16px; font-weight: 700; color: var(--accent); text-decoration: none;">{a.agentName}</a>
-                    <span class="font-display" style="font-size: 16px; font-weight: 700; color: var(--warning);">{formatCents(a.totalCents)}</span>
+                    <span class="font-display" style="font-size: 16px; font-weight: 700; color: var(--warning);">{formatUsd(a.totalCents)}</span>
                   </div>
                   <div style="height: 6px; background: var(--bg-inset); border-radius: 3px; overflow: hidden;">
                     <div style={`width: ${(a.totalCents / maxAgentCost) * 100}%; height: 100%; background: var(--warning); border-radius: 3px; transition: width 0.5s ease;`} />
@@ -76,7 +76,7 @@ export const CostDashboardPage: FC<CostDashboardProps> = ({ summary, days, teamB
                       <td class="font-mono" style="font-size: 14px; color: var(--text-primary); font-weight: 500;">{m.model}</td>
                       <td>{(m.inputTokens / 1000).toFixed(1)}k</td>
                       <td>{(m.outputTokens / 1000).toFixed(1)}k</td>
-                      <td class="font-display" style="font-weight: 700; color: var(--warning);">{formatCents(m.totalCents)}</td>
+                      <td class="font-display" style="font-weight: 700; color: var(--warning);">{formatUsd(m.totalCents)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -20,8 +20,7 @@ export function timeAgo(date: Date): string {
   return `${Math.floor(diff / 86400_000)}d ago`;
 }
 
-export function formatCents(cents: number): string {
-  if (cents < 100) return `${cents}¢`;
+export function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 

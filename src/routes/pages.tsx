@@ -22,6 +22,7 @@ import { ChatPage } from '../views/chat.js';
 import { TeamsPage } from '../views/teams.js';
 import { TeamSettingsPage } from '../views/team-settings.js';
 import { getChatHistory } from '../core/architect.js';
+import { maskValue } from '../lib/crypto.js';
 
 export const pageRoutes = new Hono();
 
@@ -516,9 +517,23 @@ pageRoutes.get('/teams/:slug/settings', async (c) => {
   const teamSpentCents = getTeamMonthlySpend(teamId);
   const msg = c.req.query('msg');
   const err = c.req.query('err');
+
+  let anthropicKeyMasked: string | null = null;
+  if (keySetting) {
+    try {
+      const { loadMasterKey, decrypt } = await import('../lib/crypto.js');
+      const dataDir = process.env.DATA_DIR || './data';
+      const masterKey = loadMasterKey(dataDir);
+      anthropicKeyMasked = maskValue(decrypt(keySetting.value, masterKey));
+    } catch {
+      anthropicKeyMasked = '•••••';
+    }
+  }
+
   return c.html(<TeamSettingsPage
     teamBase={teamBase} teamSlug={teamSlug} teamName={teamName}
     hasAnthropicKey={!!keySetting}
+    anthropicKeyMasked={anthropicKeyMasked}
     autoApproveKnowledge={autoApprove?.value === 'true'}
     teamBudgetCents={teamBudgetCents}
     teamSpentCents={teamSpentCents}
@@ -633,7 +648,7 @@ function renderSettings(c: any, newKey?: string) {
   const maskedKeys = keys.map(k => ({
     id: k.id,
     name: k.name,
-    key: k.key.length > 10 ? k.key.slice(0, 7) + '•••' + k.key.slice(-4) : '•••',
+    key: maskValue(k.key),
     createdAt: k.createdAt,
   }));
   return c.html(<SettingsPage apiKeys={maskedKeys} newKey={newKey} />);
