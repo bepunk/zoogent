@@ -344,6 +344,8 @@ the same MCP calls work against `ZOOGENT_URL` without any deployment step for th
 - Log sanitization (strips API keys from stdout/stderr)
 - First user = owner, registration closed after setup
 - Team isolation: agents, skills, memory, knowledge scoped per team
+- **Agent sandbox**: TypeScript agents always run with Node.js 24 `--permission`. Write access restricted to the team shared folder (`ZOOGENT_SHARED_DIR = data/teams/{id}/shared/`). No child_process spawning, no native addons. `--max-old-space-size=512` applied.
+- **Shared team folder**: `data/teams/{id}/shared/` — agents in the same team can exchange files (images, video, CSVs) without cloud storage. Persists across restarts if `data/` is mounted as a Docker volume.
 
 ## License
 

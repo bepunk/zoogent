@@ -190,9 +190,11 @@ zoogent mcp            # Start MCP server (stdio)
 - `ANTHROPIC_API_KEY` injected from `team_settings` (falls back to process.env)
 - `ZOOGENT_API_KEY` injected from `api_keys` table (first available key)
 - `ZOOGENT_TEAM_ID` injected into agent env
+- `ZOOGENT_SHARED_DIR` injected → `{dataDir}/teams/{teamId}/shared/` (created on spawn if missing)
 - Agent integrations injected: `INTEGRATION_{NAME}_{FIELD}` + `ZOOGENT_INTEGRATIONS` JSON
 - Team knowledge scoped by agent's teamId
 - Cost tracker timestamp: compare in seconds (`Math.floor(date.getTime() / 1000)`) — Drizzle `mode: 'timestamp'` stores as seconds
+- **Sandbox (always on)**: TypeScript agents spawn with `--permission --allow-fs-read=* --allow-fs-write={sharedDir} --max-old-space-size=512`. No child_process, no native addons. Write only to `ZOOGENT_SHARED_DIR`.
 
 ### 5 Communication Channels
 1. **Tasks** — personal messages between agents (task payload)

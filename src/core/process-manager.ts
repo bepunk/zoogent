@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { agents, agentRuns, costEvents, agentSkills, teamKnowledge, chatMessages, teamSettings, agentIntegrations, apiKeys, teams } from '../db/schema.js';
@@ -172,6 +173,7 @@ export async function startAgent(
     ZOOGENT_SKILLS_DIR: process.env.SKILLS_DIR || resolve(process.cwd(), 'data/skills'),
     ZOOGENT_TEAM_ID: agent.teamId,
     ANTHROPIC_API_KEY: anthropicKey,
+    ZOOGENT_SHARED_DIR: resolve(dataDir, 'teams', agent.teamId, 'shared'),
   };
 
   // Inject agent integrations
@@ -246,7 +248,6 @@ export async function startAgent(
       return null;
     }
     spawnCommand = process.execPath; // node
-    spawnArgs = [bundlePath];
     spawnCwd = dirname(bundlePath);
 
     // Ensure the child can resolve blessed deps from zoogent's node_modules,
@@ -256,6 +257,17 @@ export async function startAgent(
     childEnv.NODE_PATH = existingNodePath
       ? `${zoogentModules}${delimiter}${existingNodePath}`
       : zoogentModules;
+
+    // Create shared team dir and restrict agent writes to it via Node permission model.
+    const sharedDir = childEnv.ZOOGENT_SHARED_DIR;
+    mkdirSync(sharedDir, { recursive: true });
+    spawnArgs = [
+      '--max-old-space-size=512',
+      '--permission',
+      '--allow-fs-read=*',
+      `--allow-fs-write=${sharedDir}`,
+      bundlePath,
+    ];
   } else {
     spawnCommand = agent.command!;
     spawnArgs = agent.args ? JSON.parse(agent.args) : [];

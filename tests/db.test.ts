@@ -121,7 +121,7 @@ describe('Database Schema', () => {
     it('has seeded system skills', () => {
       const db = getDb();
       const all = db.select().from(systemSkills).all();
-      expect(all.length).toBe(6);
+      expect(all.length).toBe(7);
       const paths = all.map(s => s.path);
       expect(paths).toContain('system/team-design.md');
       expect(paths).toContain('system/agent-patterns.md');

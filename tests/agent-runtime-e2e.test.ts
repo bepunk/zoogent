@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import app from '../src/index.js';
 import { getDb } from '../src/db/index.js';
@@ -96,4 +96,48 @@ describe('typescript runtime end-to-end', () => {
     const res = await req(`/api/teams/${team.id}/agents/e2e-nocode-1/trigger`, { method: 'POST' });
     expect(res.status).toBe(409);
   });
+});
+
+describe('agent sandbox (write restrictions)', () => {
+  it('agent can write to ZOOGENT_SHARED_DIR', async () => {
+    const team = createTestTeam('sb-shared');
+    const source = `
+      import { writeFileSync } from 'node:fs';
+      import { join } from 'node:path';
+      writeFileSync(join(process.env.ZOOGENT_SHARED_DIR, 'test.txt'), 'ok');
+      console.log('WRITE_OK');
+      process.exit(0);
+    `;
+    await req(`/api/teams/${team.id}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ id: 'sb-shared-1', name: 'SB Shared', source }),
+    });
+    const triggerRes = await req(`/api/teams/${team.id}/agents/sb-shared-1/trigger`, { method: 'POST' });
+    expect(triggerRes.status).toBe(200);
+    const { runId } = await triggerRes.json();
+    const run = await waitForRun(runId, 30_000);
+    expect(run.status).toBe('success');
+    expect(run.stdout || '').toContain('WRITE_OK');
+  }, 30_000);
+
+  it('agent cannot write outside ZOOGENT_SHARED_DIR', async () => {
+    const team = createTestTeam('sb-outside');
+    const source = `
+      import { writeFileSync } from 'node:fs';
+      try {
+        writeFileSync('/tmp/outside-attack.txt', 'x');
+        console.log('WRITE_ALLOWED');
+      } catch { console.log('WRITE_BLOCKED'); }
+      process.exit(0);
+    `;
+    await req(`/api/teams/${team.id}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ id: 'sb-outside-1', name: 'SB Outside', source }),
+    });
+    const triggerRes = await req(`/api/teams/${team.id}/agents/sb-outside-1/trigger`, { method: 'POST' });
+    expect(triggerRes.status).toBe(200);
+    const { runId } = await triggerRes.json();
+    const run = await waitForRun(runId, 30_000);
+    expect(run.stdout || '').toContain('WRITE_BLOCKED');
+  }, 30_000);
 });

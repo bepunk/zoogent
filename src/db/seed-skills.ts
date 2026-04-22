@@ -227,6 +227,7 @@ If you need a lib outside this list, tell the user — it requires a zoogent ver
 - \`ZOOGENT_AGENT_MODEL\` — configured AI model name
 - \`ZOOGENT_RUN_ID\` — current run ID
 - \`ZOOGENT_TEAM_ID\` — team ID
+- \`ZOOGENT_SHARED_DIR\` — shared folder for the team (agents can read and write here to exchange files)
 - \`ZOOGENT_MEMORIES\` — JSON array of scored/decayed memories
 - \`ZOOGENT_AGENT_SKILLS\` — concatenated skill contents
 - \`ZOOGENT_TEAM_KNOWLEDGE\` — JSON array of active team knowledge
@@ -330,7 +331,7 @@ main().catch(console.error);
 ## What Doesn't Work
 
 - **Non-blessed imports** — bundle fails. If you need a new lib, tell the user.
-- **Filesystem outside \`/tmp\`** — agents should not write project files. Use the Store for state.
+- **Writing outside \`ZOOGENT_SHARED_DIR\`** — agents can only write to their team's shared folder. Use \`process.env.ZOOGENT_SHARED_DIR\` to get the path. Use the Store for lightweight state (URLs, IDs), shared dir for actual files.
 - **Long-running HTTP servers inside a manual/cron agent** — use \`type="long-running"\` for that.
 - **Synchronous waits > timeoutSec** — agent is killed. Either shorten the work or set \`type="long-running"\`.
 - **Relative imports from the agent file** — zoogent stores a single source string, not a folder. Put all code in one file or factor into skills (markdown) or helper utilities that can be bundled from blessed deps.
@@ -473,7 +474,6 @@ category: system
 - NOT an AI itself — each agent calls its own LLM
 - NOT a container orchestrator — spawn happens on the same machine as zoogent
 - NOT a message queue — tasks are simple DB records
-- NOT a sandbox — agents run with the same filesystem/network permissions as zoogent
 
 ## Agent Runtimes
 - \`typescript\` (default): source in DB, esbuild bundle, \`node\` execution. Allowed imports = blessed deps.
@@ -485,6 +485,8 @@ category: system
 - API key auth for agent SDK → server; session auth for dashboard
 - Logs sanitized (API keys stripped from stdout/stderr)
 - Unknown imports in typescript source → bundle rejected (supply-chain guard)
+- **Agent sandbox**: typescript agents run with Node.js \`--permission\`. Write access limited to
+  the team shared folder (\`ZOOGENT_SHARED_DIR\`). No child_process spawning, no native addons.
 
 ## Limits
 - SQLite, single-writer (WAL helps; high-write contention possible)
@@ -500,6 +502,129 @@ ZooGent's SDK is also an HTTP API — agents in any language can call it directl
 Code deployment for exec agents is the user's responsibility (volume mount, git clone, image bake).
 
 MCP code tools (\`write_agent_code\`, \`get_agent_code\`) only work for \`runtime="typescript"\`.
+`,
+    },
+    {
+      path: 'system/media-agents.md',
+      name: 'Media-Generating Agents',
+      description: 'How to build agents that generate images, video, audio, or other files and share them within the team',
+      category: 'system',
+      content: `---
+name: Media-Generating Agents
+description: Patterns for agents that generate files (images, video, audio, PDFs) and pass them to other agents
+category: system
+---
+
+# Media-Generating Agents
+
+Agents that generate images, video, audio, or other binary files have two ways to pass output to other agents: **local shared folder** and **cloud storage**. Pick based on whether the file needs to leave the server.
+
+## Shared Folder (local)
+
+Every team has a shared folder injected via \`ZOOGENT_SHARED_DIR\`. Agents in the same team can write and read files there.
+
+\`\`\`typescript
+import { writeFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const sharedDir = process.env.ZOOGENT_SHARED_DIR!;
+
+// Write a generated file
+const outputPath = join(sharedDir, \`image-\${Date.now()}.png\`);
+writeFileSync(outputPath, imageBuffer);
+
+// Pass the path to the next agent via Task
+await createTask({
+  agentId: 'publisher-agent',
+  title: 'Publish image',
+  payload: JSON.stringify({ filePath: outputPath }),
+});
+\`\`\`
+
+The receiving agent reads the file from the same path:
+
+\`\`\`typescript
+const { filePath } = JSON.parse(task.payload);
+const imageBuffer = readFileSync(filePath);
+\`\`\`
+
+**When to use**: file stays on the server (resize, watermark, embed in PDF, upload to a service that has server-to-server access). Simpler, no external dependencies, zero latency.
+
+> The shared folder is inside \`data/teams/{teamId}/shared/\` which is persisted by the same Docker volume as the rest of \`data/\`. Files survive server restarts. Clean up old files explicitly to avoid disk bloat.
+
+## Cloud Storage
+
+Upload the file to S3, Cloudinary, GCS, or similar, then pass the URL via Task or Store.
+
+\`\`\`typescript
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'; // not blessed — use axios + presigned URL or exec runtime
+// OR use axios to call your cloud API directly
+
+// Example: Cloudinary upload via axios
+import axios from 'axios';
+import FormData from 'form-data'; // not blessed; use native fetch + FormData instead
+import { readFileSync } from 'node:fs';
+
+const form = new FormData();
+form.append('file', readFileSync(filePath));
+form.append('upload_preset', process.env.CLOUDINARY_UPLOAD_PRESET!);
+
+const res = await axios.post(
+  \`https://api.cloudinary.com/v1_1/\${process.env.CLOUDINARY_CLOUD_NAME}/image/upload\`,
+  form,
+  { headers: form.getHeaders() }
+);
+const url = res.data.secure_url;
+
+// Pass the URL
+await createTask({
+  agentId: 'publisher-agent',
+  title: 'Post image',
+  payload: JSON.stringify({ imageUrl: url }),
+});
+\`\`\`
+
+**When to use**: file needs to be served publicly, embedded in emails, or accessed by external services. Requires cloud credentials (set via Integration).
+
+## Decision Guide
+
+| Situation | Use |
+|-----------|-----|
+| File processed by another agent on same server | Local shared folder |
+| File embedded in email or sent to webhook | Cloud (get public URL) |
+| File served to end users | Cloud |
+| Temporary intermediate output | Local shared folder |
+| File needs long-term retention | Cloud |
+
+## Naming Files
+
+Always include a unique suffix to avoid collisions between concurrent runs:
+
+\`\`\`typescript
+import { join } from 'node:path';
+const sharedDir = process.env.ZOOGENT_SHARED_DIR!;
+const filename = \`report-\${Date.now()}-\${Math.random().toString(36).slice(2)}.pdf\`;
+const path = join(sharedDir, filename);
+\`\`\`
+
+## Cleanup
+
+Files in the shared folder are not automatically deleted. If your agents generate many files, add a cleanup step:
+
+\`\`\`typescript
+import { readdirSync, statSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+
+const sharedDir = process.env.ZOOGENT_SHARED_DIR!;
+const maxAgeMs = 24 * 60 * 60 * 1000; // 24 hours
+const now = Date.now();
+
+for (const file of readdirSync(sharedDir)) {
+  const filePath = join(sharedDir, file);
+  const { mtimeMs } = statSync(filePath);
+  if (now - mtimeMs > maxAgeMs) unlinkSync(filePath);
+}
+\`\`\`
 `,
     },
   ];
