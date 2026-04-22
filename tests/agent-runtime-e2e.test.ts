@@ -120,6 +120,34 @@ describe('agent sandbox (write restrictions)', () => {
     expect(run.stdout || '').toContain('WRITE_OK');
   }, 30_000);
 
+  it('agent can import from team code library', async () => {
+    const team = createTestTeam('e2e-lib');
+
+    const libRes = await req(`/api/teams/${team.id}/code-library`, {
+      method: 'POST',
+      body: JSON.stringify({ path: 'utils.ts', content: 'export const greet = () => "LIBRARY_OK";' }),
+    });
+    expect(libRes.status).toBe(200);
+
+    const source = `
+      import { greet } from 'team:utils';
+      console.log(greet());
+      process.exit(0);
+    `;
+    const createRes = await req(`/api/teams/${team.id}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ id: 'e2e-lib-1', name: 'Lib Test', source }),
+    });
+    expect(createRes.status).toBe(201);
+
+    const triggerRes = await req(`/api/teams/${team.id}/agents/e2e-lib-1/trigger`, { method: 'POST' });
+    expect(triggerRes.status).toBe(200);
+    const { runId } = await triggerRes.json();
+    const run = await waitForRun(runId, 20_000);
+    expect(run.status).toBe('success');
+    expect(run.stdout || '').toContain('LIBRARY_OK');
+  }, 20_000);
+
   it('agent cannot write outside ZOOGENT_SHARED_DIR', async () => {
     const team = createTestTeam('sb-outside');
     const source = `

@@ -1,4 +1,4 @@
-import { build, type Message } from 'esbuild';
+import { build, type Message, type Plugin } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,11 @@ export const BLESSED_DEPENDENCIES = [
   'imapflow',
   'mailparser',
   'jsonwebtoken',
+  'node-telegram-bot-api',
+  'discord.js',
+  'jimp',
+  'ws',
+  'undici',
 ];
 
 export const MAX_SOURCE_BYTES = 1024 * 1024; // 1 MB
@@ -73,12 +78,36 @@ function formatMessages(messages: Message[]): string {
   }).join('\n');
 }
 
-export async function bundleAgentSource(source: string, agentId: string): Promise<BundleResult> {
+export async function bundleAgentSource(
+  source: string,
+  agentId: string,
+  teamLibrary?: Record<string, string>,
+): Promise<BundleResult> {
   if (!source || typeof source !== 'string') {
     return { ok: false, error: 'Source is required and must be a string.' };
   }
   if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) {
     return { ok: false, error: `Source exceeds max size of ${MAX_SOURCE_BYTES} bytes.` };
+  }
+
+  const plugins: Plugin[] = [];
+  if (teamLibrary && Object.keys(teamLibrary).length > 0) {
+    plugins.push({
+      name: 'team-library',
+      setup(build) {
+        build.onResolve({ filter: /^team:/ }, (args) => ({
+          path: args.path.slice(5),
+          namespace: 'team-library',
+        }));
+        build.onLoad({ filter: /.*/, namespace: 'team-library' }, (args) => {
+          const content = teamLibrary[args.path] ?? teamLibrary[args.path + '.ts'];
+          if (content === undefined) {
+            return { errors: [{ text: `Team library file not found: team:${args.path}` }] };
+          }
+          return { contents: content, loader: 'ts' };
+        });
+      },
+    });
   }
 
   try {
@@ -100,6 +129,7 @@ export async function bundleAgentSource(source: string, agentId: string): Promis
       treeShaking: true,
       minify: false,
       legalComments: 'none',
+      plugins,
     });
 
     const output = result.outputFiles[0];

@@ -507,6 +507,14 @@ or via select_team). Code-related tools apply to runtime="typescript" agents onl
   bundle errors on failure (e.g. unknown import not in blessed deps). (id, source)
 - get_agent_code: Read current source + bundle status (id). Returns { source, bundleHash, bundleError }.
 
+### Team Code Library (4, typescript runtime)
+- list_team_library: List all shared TypeScript files in the team code library (path, updatedAt)
+- write_team_library_file: Create or update a shared file (path, content). Agents import via:
+  import { foo } from 'team:utils'  (resolves to utils.ts in the library)
+  import { foo } from 'team:lib/helpers'  (resolves to lib/helpers.ts)
+- get_team_library_file: Get content of a shared file (path)
+- delete_team_library_file: Delete a shared file (path)
+
 ### Skills (6)
 - list_skills: List all skills in a team with metadata (teamId)
 - get_skill: Get skill content and metadata (teamId, path)
@@ -677,6 +685,44 @@ Every agent has a runtime:
   Zoogent just spawns the process, injects env vars, captures logs. Use when wrapping
   binaries, Python/Go scripts, or pre-built tooling. Code deployment is your responsibility
   (volume mount, git clone, image bake). MCP code tools do not apply.
+
+Runtime cannot be changed after creation. To switch runtime: delete_agent → create_agent with new runtime.
+
+## Team Code Library
+
+Shared TypeScript files for the team. All agents in the same team can import from the library.
+
+Usage: write shared utilities once, import them in multiple agents.
+
+Import syntax in agent code:
+  import { myHelper } from 'team:utils'       (resolves to utils.ts in the library)
+  import { foo } from 'team:lib/helpers'       (resolves to lib/helpers.ts)
+
+MCP tools: list_team_library, write_team_library_file, get_team_library_file, delete_team_library_file
+API: GET/POST /api/teams/:teamId/code-library, GET/DELETE /api/teams/:teamId/code-library/file?path=
+
+Bundling: when you call write_agent_code, zoogent loads the team library from DB and injects it
+into esbuild. The library files are bundled INTO the agent's .mjs — no runtime dependency.
+If a team: import path is not found, esbuild fails with a clear error at upload time.
+
+## Node 24 Globals — no import needed
+
+These are available in all typescript agents without any import statement:
+
+  fetch, Request, Response, Headers   — HTTP client (use instead of node-fetch / undici)
+  FormData, Blob, File                — multipart / binary data
+  WebSocket                           — WebSocket client (use instead of 'ws' package)
+  URL, URLSearchParams                — URL parsing
+  TextEncoder, TextDecoder            — encoding
+  structuredClone, atob, btoa         — utilities
+  crypto                              — Web Crypto API
+
+Old patterns to AVOID (they work but add unnecessary imports):
+  import fetch from 'node-fetch'      → just use fetch
+  import { fetch } from 'undici'      → just use fetch
+  import FormData from 'form-data'    → just use FormData
+  import WebSocket from 'ws'          → just use WebSocket (though 'ws' is blessed if needed)
+  import { URL } from 'url'           → just use URL
 
 ## Agent Fields
 

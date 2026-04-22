@@ -134,6 +134,17 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['id'],
     },
   },
+  {
+    name: 'delete_agent',
+    description: 'Delete an agent permanently. Required when switching runtime — runtime cannot be changed after creation. Workflow: delete_agent → create_agent with new runtime.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: 'Agent ID to delete' },
+      },
+      required: ['id'],
+    },
+  },
 ];
 
 // ─── Tool Execution ──────────────────────────────────────────────────────────
@@ -294,6 +305,13 @@ async function executeTool(name: string, input: any, teamId: string): Promise<st
       const code = getAgentCode(teamId, input.id);
       if (!code) return `Agent "${input.id}" has no code (not typescript runtime or not found).`;
       return JSON.stringify(code, null, 2);
+    }
+
+    case 'delete_agent': {
+      const agent = db.select().from(agents).where(and(eq(agents.id, input.id), eq(agents.teamId, teamId))).get();
+      if (!agent) return `Agent "${input.id}" not found in this team.`;
+      db.delete(agents).where(eq(agents.id, input.id)).run();
+      return `Agent "${input.id}" deleted.`;
     }
 
     default:

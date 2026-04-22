@@ -1,4 +1,4 @@
-# CLAUDE.md - ZooGent v0.4
+# CLAUDE.md - ZooGent v0.4.4
 
 ## What is ZooGent
 
@@ -6,7 +6,7 @@ Lightweight AI agent orchestrator with built-in Architect AI. Multi-team support
 
 Two UX paths:
 1. **Chat UI** (main) — Architect AI at `/teams/:slug/chat` designs teams, writes code, manages agents
-2. **MCP** (dev path) — ~30 tools for Claude Code, team-scoped, supports local and remote servers. Agent code flows through MCP: `create_agent` with `source` (bundled atomically) or separate `write_agent_code` for iteration.
+2. **MCP** (dev path) — ~35 tools for Claude Code, team-scoped, supports local and remote servers. Agent code flows through MCP: `create_agent` with `source` (bundled atomically) or separate `write_agent_code` for iteration. Team code library tools: `list_team_library`, `write_team_library_file`, `get_team_library_file`, `delete_team_library_file`.
 
 ## Agent Runtime Model (v0.4)
 
@@ -44,12 +44,12 @@ src/
   mcp.ts                - MCP server (team-scoped tools, HTTP client, get_agent_guide, instructions)
   public/styles.css     - All CSS (themes, cards, chat bubbles, tool blocks)
   db/
-    schema.ts           - Drizzle schema (23 tables: 4 auth + 19 app). `agents` carries runtime + source + bundle + bundleHash + bundleError.
+    schema.ts           - Drizzle schema (24 tables: 4 auth + 20 app). `agents` carries runtime + source + bundle + bundleHash + bundleError. `team_code_library` stores shared TS files (team-scoped).
     index.ts            - SQLite connection + WAL + FTS5 init + migrations
     seed.ts             - Demo agents
     seed-skills.ts      - System skills for Architect AI (6 skills in system_skills table)
   core/
-    architect.ts        - Architect AI: Claude + 10 function calling tools (create_agent, update_agent, write_agent_code, get_agent_code, ...) + agentic loop
+    architect.ts        - Architect AI: Claude + 11 function calling tools (create_agent, update_agent, delete_agent, write_agent_code, get_agent_code, ...) + agentic loop
     process-manager.ts  - Spawn (runtime-aware), env inject, log capture/flush, timeout, orphan cleanup, self-healing
     scheduler.ts        - node-cron per agent
     cost-tracker.ts     - Cost aggregation queries
@@ -143,8 +143,8 @@ zoogent mcp            # Start MCP server (stdio)
 - Team sub-nav: Architect / Agents / Tasks / Costs / Skills / Memory / Knowledge / Settings
 
 ### Architect AI (`core/architect.ts`)
-- Claude Sonnet with 10 function calling tools
-- Tools: create_agent (runtime+source), update_agent, create_skill, assign_skill, list_agents, list_skills, trigger_agent, get_logs, write_agent_code (via setAgentCode → bundle → DB), get_agent_code
+- Claude Sonnet with 11 function calling tools
+- Tools: create_agent (runtime+source), update_agent, delete_agent, create_skill, assign_skill, list_agents, list_skills, trigger_agent, get_logs, write_agent_code (via setAgentCode → bundle → DB), get_agent_code
 - System prompt built from `system_skills` table + current agent state for the team
 - Lists only agents/skills belonging to the team
 - Agentic loop: multiple tool_use blocks → collect all → send tool_results as one user message
@@ -236,7 +236,7 @@ zoogent mcp            # Start MCP server (stdio)
 
 ## Database
 
-23 tables: 4 auth (Better Auth) + 19 app:
+24 tables: 4 auth (Better Auth) + 20 app:
 - `teams`, `team_members`, `team_settings`
 - `agents` (has teamId, runtime, source, bundle, bundleHash, bundleError; command/args/cwd nullable — only set for runtime='exec')
 - `agent_runs`, `cost_events`, `agent_tasks`
@@ -248,6 +248,7 @@ zoogent mcp            # Start MCP server (stdio)
 - `chat_messages` (Architect chat history, has teamId)
 - `settings` (encrypted key-value, global)
 - `system_skills` (global, read-only, used by Architect AI)
+- `team_code_library` (shared TS files, teamId + path unique; imported via `team:` prefix)
 
 FTS5 virtual table for memory full-text search.
 
@@ -269,6 +270,7 @@ Migrations in `drizzle/` — applied on `start` via `runMigrations()`.
 - `/api/teams/:teamId/costs` — Cost summary
 - `/api/teams/:teamId/budget-status` — Budget per agent
 - `/api/teams/:teamId/knowledge` — Team knowledge (list + approve + archive)
+- `/api/teams/:teamId/code-library` — Team code library (GET list, POST upsert, GET/DELETE /file?path=)
 
 ## SDK Exports (`client/index.ts`)
 

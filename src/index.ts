@@ -15,6 +15,7 @@ import { apiMemoryRoutes } from './routes/api-memory.js';
 import { apiLlmsRoutes } from './routes/api-llms.js';
 import { apiChatRoutes } from './routes/api-chat.js';
 import { apiTeamsRoutes } from './routes/api-teams.js';
+import { apiCodeLibraryRoutes } from './routes/api-code-library.js';
 import { agents, agentStore, teams, teamKnowledge, systemSkills, users } from './db/schema.js';
 import { eq, and, lt, sql, asc, desc } from 'drizzle-orm';
 import { getCostSummary, getBudgetStatus } from './core/cost-tracker.js';
@@ -98,6 +99,7 @@ app.route('/api/teams/:teamId/skills', apiSkillsRoutes);
 app.route('/api/teams/:teamId/tasks', apiTasksRoutes);
 app.route('/api/teams/:teamId/memory', apiMemoryRoutes);
 app.route('/api/teams/:teamId/chat', apiChatRoutes);
+app.route('/api/teams/:teamId/code-library', apiCodeLibraryRoutes);
 
 // Team-scoped inline routes
 app.get('/api/teams/:teamId/costs', async (c) => {

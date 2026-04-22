@@ -183,7 +183,7 @@ Always available — import directly:
 - \`zod\`
 
 **HTTP & scraping**
-- \`axios\` (alternative: native \`fetch\`)
+- \`axios\` (alternative: native \`fetch\` — no import needed in Node 24)
 - \`cheerio\`
 
 **Google stack**
@@ -214,9 +214,88 @@ Always available — import directly:
 **Auth**
 - \`jsonwebtoken\`
 
+**Messaging / Bots**
+- \`node-telegram-bot-api\` — Telegram bots
+- \`discord.js\` — Discord bots (Gateway + REST)
+
+**Image processing**
+- \`jimp\` — resize, crop, composite, text, filters. Pure JS, works in sandbox.
+
+**WebSocket**
+- \`ws\` — WebSocket client (though Node 24 has global \`WebSocket\` — prefer that)
+- \`undici\` — fetch internals (use global \`fetch\` instead)
+
 **Node built-ins** — all available (\`fs\`, \`fs/promises\`, \`crypto\`, \`http(s)\`, \`path\`, \`child_process\`, \`stream\`, \`url\`, \`zlib\`, etc.)
 
 If you need a lib outside this list, tell the user — it requires a zoogent version bump.
+
+## Node 24 Globals — no import needed
+
+These are available without importing:
+
+  fetch, Request, Response, Headers   — HTTP (no node-fetch or undici needed)
+  FormData, Blob, File                — multipart / binary
+  WebSocket                           — WebSocket client
+  URL, URLSearchParams                — URL parsing
+  TextEncoder, TextDecoder            — encoding
+  structuredClone, atob, btoa, crypto — utilities
+
+Avoid redundant imports:
+  ❌ import fetch from 'node-fetch'     → ✅ just use fetch
+  ❌ import { fetch } from 'undici'     → ✅ just use fetch
+  ❌ import FormData from 'form-data'   → ✅ just use FormData
+  ❌ import WebSocket from 'ws'         → ✅ just use WebSocket
+  ❌ import { URL } from 'url'          → ✅ just use URL
+
+## Team Code Library
+
+Share TypeScript utilities across agents without copy-pasting.
+
+1. Write shared code with write_team_library_file:
+   path: "utils.ts", content: "export const greet = (name: string) => \`Hello \${name}\`;"
+
+2. Import in any agent:
+   \`\`\`typescript
+   import { greet } from 'team:utils';         // resolves utils.ts
+   import { foo } from 'team:lib/helpers';     // resolves lib/helpers.ts
+   \`\`\`
+
+The library is bundled INTO the agent at upload time — no runtime dependency.
+Missing team: imports fail at upload with a clear error.
+
+## Telegram Bot Pattern
+
+\`\`\`typescript
+import TelegramBot from 'node-telegram-bot-api';
+
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN!, { polling: false });
+await bot.sendMessage(process.env.TELEGRAM_CHAT_ID!, 'Hello from ZooGent!');
+\`\`\`
+
+For long-running Telegram bots, use \`type: "long-running"\` and \`polling: true\`.
+
+## Discord Bot Pattern
+
+\`\`\`typescript
+import { Client, GatewayIntentBits } from 'discord.js';
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+client.once('ready', () => console.log('Bot ready'));
+client.login(process.env.DISCORD_TOKEN!);
+\`\`\`
+
+For Discord bots always use \`type: "long-running"\`.
+
+## Image Processing Pattern (jimp)
+
+\`\`\`typescript
+import Jimp from 'jimp';
+const sharedDir = process.env.ZOOGENT_SHARED_DIR!;
+
+const image = await Jimp.read(\`\${sharedDir}/input.jpg\`);
+image.resize(800, Jimp.AUTO).quality(85);
+await image.writeAsync(\`\${sharedDir}/output.jpg\`);
+\`\`\`
 
 ## Environment Variables (auto-injected on spawn)
 
@@ -334,7 +413,9 @@ main().catch(console.error);
 - **Writing outside \`ZOOGENT_SHARED_DIR\`** — agents can only write to their team's shared folder. Use \`process.env.ZOOGENT_SHARED_DIR\` to get the path. Use the Store for lightweight state (URLs, IDs), shared dir for actual files.
 - **Long-running HTTP servers inside a manual/cron agent** — use \`type="long-running"\` for that.
 - **Synchronous waits > timeoutSec** — agent is killed. Either shorten the work or set \`type="long-running"\`.
-- **Relative imports from the agent file** — zoogent stores a single source string, not a folder. Put all code in one file or factor into skills (markdown) or helper utilities that can be bundled from blessed deps.
+- **Relative imports** (\`import { foo } from './lib/utils'\`) — zoogent stores a single source string, not a folder. Use Team Code Library (\`import { foo } from 'team:lib/utils'\`) for shared code.
+- **\`sharp\`, \`canvas\`, \`@napi-rs/canvas\`** — require native addons, blocked by Node.js \`--permission\` sandbox. Use \`jimp\` for image processing instead. For image generation from scratch: use exec runtime or a cloud API.
+- **\`update_agent\` cannot change runtime** — runtime is immutable. Workflow: \`delete_agent\` → \`create_agent\` with new runtime.
 
 ## Patterns
 

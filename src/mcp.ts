@@ -623,6 +623,46 @@ server.tool('delete_integration', 'Remove an integration from an agent', {
   return text('Integration deleted');
 });
 
+// ─── Team Code Library ──────────────────────────────────────────────────────────
+
+server.tool('list_team_library', 'List shared TypeScript files in the team code library. Agents import them via: import { foo } from "team:path"', {
+}, async () => {
+  const err = await requireTeam(); if (err) return err;
+  const { data, ok } = await api(teamPath('/code-library'));
+  if (!ok) return text('Failed to list team library');
+  return text(JSON.stringify(data, null, 2));
+});
+
+server.tool('write_team_library_file', 'Create or update a shared TypeScript file in the team code library. Agents import it via: import { foo } from "team:path" (e.g. path="utils.ts" → import from "team:utils")', {
+  path: z.string().describe('File path, e.g. "utils.ts" or "lib/helpers.ts"'),
+  content: z.string().describe('TypeScript source code'),
+}, async ({ path, content }) => {
+  const err = await requireTeam(); if (err) return err;
+  const { data, ok } = await api(teamPath('/code-library'), {
+    method: 'POST',
+    body: JSON.stringify({ path, content }),
+  });
+  if (!ok) return text((data as any)?.error || 'Failed to write file');
+  return text(`Written: ${path}`);
+});
+
+server.tool('get_team_library_file', 'Get content of a shared TypeScript file from the team code library', {
+  path: z.string().describe('File path, e.g. "utils.ts"'),
+}, async ({ path }) => {
+  const err = await requireTeam(); if (err) return err;
+  const { data, ok } = await api(teamPath(`/code-library/file?path=${encodeURIComponent(path)}`));
+  if (!ok) return text(`File not found: ${path}`);
+  return text((data as any)?.content || '');
+});
+
+server.tool('delete_team_library_file', 'Delete a shared TypeScript file from the team code library', {
+  path: z.string().describe('File path, e.g. "utils.ts"'),
+}, async ({ path }) => {
+  const err = await requireTeam(); if (err) return err;
+  await api(teamPath(`/code-library/file?path=${encodeURIComponent(path)}`), { method: 'DELETE' });
+  return text(`Deleted: ${path}`);
+});
+
 // ─── Start ──────────────────────────────────────────────────────────────────────
 
 async function main() {

@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node
 import { dirname, resolve } from 'node:path';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { agents } from '../db/schema.js';
+import { agents, teamCodeLibrary } from '../db/schema.js';
 import { config } from './config.js';
 import { bundleAgentSource, type BundleResult } from './agent-bundler.js';
 
@@ -27,7 +27,9 @@ export async function setAgentCode(teamId: string, agentId: string, source: stri
     return { ok: false, error: `Agent "${agentId}" has runtime="${agent.runtime}". Code upload is only supported for typescript-runtime agents.` };
   }
 
-  const result: BundleResult = await bundleAgentSource(source, agentId);
+  const libraryRows = db.select().from(teamCodeLibrary).where(eq(teamCodeLibrary.teamId, teamId)).all();
+  const teamLibrary = Object.fromEntries(libraryRows.map(r => [r.path, r.content]));
+  const result: BundleResult = await bundleAgentSource(source, agentId, teamLibrary);
   if (!result.ok) {
     db.update(agents).set({
       source,

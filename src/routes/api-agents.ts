@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and, desc, lt } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { agents, agentRuns, agentSkills, agentStore, agentIntegrations } from '../db/schema.js';
+import { agents, agentRuns, agentSkills, agentStore, agentIntegrations, teamCodeLibrary } from '../db/schema.js';
 import { startAgent, stopAgent, isRunning } from '../core/process-manager.js';
 import { refreshAgent } from '../core/scheduler.js';
 import { getAgentMonthlySpend } from '../core/cost-tracker.js';
@@ -141,7 +141,9 @@ apiAgentsRoutes.post('/', async (c) => {
   let bundleHash: string | null = null;
   let bundleError: string | null = null;
   if (runtime === 'typescript' && typeof source === 'string' && source.length > 0) {
-    const result = await bundleAgentSource(source, id);
+    const libraryRows = db.select().from(teamCodeLibrary).where(eq(teamCodeLibrary.teamId, teamId)).all();
+    const teamLibrary = Object.fromEntries(libraryRows.map(r => [r.path, r.content]));
+    const result = await bundleAgentSource(source, id, teamLibrary);
     if (!result.ok) {
       return c.json({ error: 'Bundle failed', details: result.error }, 400);
     }

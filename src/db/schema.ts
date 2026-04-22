@@ -295,6 +295,18 @@ export const agentEvaluations = sqliteTable('agent_evaluations', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
+export const teamCodeLibrary = sqliteTable('team_code_library', {
+  id: text('id').notNull().primaryKey(),
+  teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('idx_team_code_library_path').on(table.teamId, table.path),
+  index('idx_team_code_library_team').on(table.teamId),
+]);
+
 // ─── Relations ──────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
