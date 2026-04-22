@@ -10,6 +10,13 @@ const getAgentId = () => process.env.ZOOGENT_AGENT_ID || '';
 const getRunId = () => process.env.ZOOGENT_RUN_ID || '';
 const getApiKey = () => process.env.ZOOGENT_API_KEY || '';
 const getAgentGoal = () => process.env.ZOOGENT_AGENT_GOAL || '';
+const getTeamId = () => process.env.ZOOGENT_TEAM_ID || '';
+
+function teamScope(path: string): string {
+  const teamId = getTeamId();
+  if (!teamId) throw new Error('ZOOGENT_TEAM_ID is not set — agent must be spawned by zoogent ≥0.4');
+  return `/api/teams/${teamId}${path}`;
+}
 
 async function apiCall(path: string, options: RequestInit = {}): Promise<any> {
   const url = `${getBaseUrl()}${path}`;
@@ -58,7 +65,7 @@ export async function createTask(params: {
   consensusStrategy?: 'majority' | 'unanimous' | 'average_score';
 }): Promise<Task | null> {
   return safeCall(
-    () => apiCall('/api/tasks', {
+    () => apiCall(teamScope('/tasks'), {
       method: 'POST',
       body: JSON.stringify({
         ...params,
@@ -71,7 +78,7 @@ export async function createTask(params: {
 
 export async function getMyTasks(status = 'pending'): Promise<Task[]> {
   return safeCall(
-    () => apiCall(`/api/tasks?agentId=${getAgentId()}&status=${status}`),
+    () => apiCall(teamScope(`/tasks?agentId=${getAgentId()}&status=${status}`)),
     [],
   );
 }
@@ -79,7 +86,7 @@ export async function getMyTasks(status = 'pending'): Promise<Task[]> {
 export async function checkoutTask(taskId: number): Promise<boolean> {
   return safeCall(
     async () => {
-      await apiCall(`/api/tasks/${taskId}/checkout`, { method: 'POST' });
+      await apiCall(teamScope(`/tasks/${taskId}/checkout`), { method: 'POST' });
       return true;
     },
     false,
@@ -88,7 +95,7 @@ export async function checkoutTask(taskId: number): Promise<boolean> {
 
 export async function completeTask(taskId: number, result?: string): Promise<void> {
   await safeCall(
-    () => apiCall(`/api/tasks/${taskId}`, {
+    () => apiCall(teamScope(`/tasks/${taskId}`), {
       method: 'PATCH',
       body: JSON.stringify({ status: 'done', result }),
     }),
@@ -98,7 +105,7 @@ export async function completeTask(taskId: number, result?: string): Promise<voi
 
 export async function failTask(taskId: number, result?: string): Promise<void> {
   await safeCall(
-    () => apiCall(`/api/tasks/${taskId}`, {
+    () => apiCall(teamScope(`/tasks/${taskId}`), {
       method: 'PATCH',
       body: JSON.stringify({ status: 'failed', result }),
     }),
@@ -171,7 +178,7 @@ export async function submitEvaluation(params: {
   reasoning?: string;
 }): Promise<any> {
   return safeCall(
-    () => apiCall(`/api/tasks/${params.taskId}/evaluate`, {
+    () => apiCall(teamScope(`/tasks/${params.taskId}/evaluate`), {
       method: 'POST',
       body: JSON.stringify({
         agentId: getAgentId(),
