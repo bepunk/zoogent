@@ -16,6 +16,20 @@ import { config } from '../lib/config.js';
 
 const MAX_LOG_BYTES = 50 * 1024; // 50KB
 
+/**
+ * Convert an integration field name to UPPER_SNAKE_CASE for env var injection.
+ * - UPPER_SNAKE_CASE already (e.g. "API_KEY", "BOT_TOKEN") → kept as-is
+ * - camelCase / PascalCase (e.g. "apiKey", "ChatId") → UPPER_SNAKE_CASE
+ * - mixed (e.g. "my_apiKey") → upper-snake with boundaries inserted
+ */
+export function toUpperSnake(field: string): string {
+  if (/^[A-Z0-9_]+$/.test(field)) return field;
+  return field
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toUpperCase();
+}
+
 interface RunningProcess {
   child: ChildProcess;
   runId: number;
@@ -189,7 +203,7 @@ export async function startAgent(
         const nameUpper = int.name.toUpperCase().replace(/-/g, '_');
         // Individual env vars: INTEGRATION_{NAME}_{FIELD}
         for (const [field, value] of Object.entries(creds)) {
-          const fieldUpper = field.replace(/([A-Z])/g, '_$1').toUpperCase();
+          const fieldUpper = toUpperSnake(field);
           childEnv[`INTEGRATION_${nameUpper}_${fieldUpper}`] = String(value);
           agentEnv[`INTEGRATION_${nameUpper}_${fieldUpper}`] = String(value); // for log sanitization
         }
