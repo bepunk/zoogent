@@ -569,6 +569,9 @@ ZOOGENT_MEMORIES        - JSON array of agent's memories, ranked by importance
 ZOOGENT_AGENT_SKILLS    - Concatenated content of all required skills (frontmatter stripped)
 ZOOGENT_TEAM_KNOWLEDGE  - JSON array of active team knowledge entries
                           Format: [{ title, content }]
+ZOOGENT_SHARED_DIR      - Absolute path to the team's shared folder (read/write allowed).
+                          Use to exchange files (images, video, CSVs) between agents in the team.
+                          Path: {dataDir}/teams/{teamId}/shared/
 
 Plus: all custom env vars configured for the agent (decrypted from AES-256-GCM storage).
 Plus: ANTHROPIC_API_KEY from team settings (if configured for the team).
@@ -655,7 +658,7 @@ memory injection, cost tracking, budget enforcement, and the web dashboard.
 
 ## Multi-Team Architecture
 
-ZooGent v0.3 supports multiple teams in one instance. Each team is an isolated workspace
+ZooGent v0.4 supports multiple teams in one instance. Each team is an isolated workspace
 with its own agents, skills, memory, knowledge, and Architect chat.
 
 - Agents belong to a team. They interact only with agents in the same team.

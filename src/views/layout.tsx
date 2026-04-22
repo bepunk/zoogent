@@ -54,7 +54,7 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ children, title, cu
           <div style="display: flex; align-items: center; gap: 32px;">
             <a href="/teams" style="text-decoration: none; display: flex; align-items: center; gap: 10px;">
               <span class="font-display" style="font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em;">ZooGent</span>
-              <span class="font-display" style="font-size: 11px; color: var(--text-muted); font-weight: 700; background: var(--bg-inset); padding: 3px 8px; border-radius: 6px;">v0.3</span>
+              <span class="font-display" style="font-size: 11px; color: var(--text-muted); font-weight: 700; background: var(--bg-inset); padding: 3px 8px; border-radius: 6px;">v0.4</span>
             </a>
             <nav class="desktop-nav" style="display: flex; gap: 4px;">
               <a href="/teams" class={`nav-link ${currentPath === '/teams' ? 'active' : ''}`}>Teams</a>
