@@ -5,9 +5,9 @@ import { agents, agentRuns, agentSkills, skills, chatMessages, systemSkills, tea
 import { decrypt, loadMasterKey } from '../lib/crypto.js';
 import { startAgent } from './process-manager.js';
 import { refreshAgent } from './scheduler.js';
+import { setAgentCode, getAgentCode } from '../lib/agent-code.js';
+import { bundleAgentSource } from '../lib/agent-bundler.js';
 import cron from 'node-cron';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const MODEL = 'claude-sonnet-4-6';
@@ -22,14 +22,17 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_agent',
-    description: 'Register a new agent',
+    description: 'Register a new agent. Default runtime is "typescript": provide `source` with TypeScript code (zoogent bundles and stores it). For binaries or non-TS scripts use runtime="exec" with `command` and `args`.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        id: { type: 'string', description: 'Unique agent ID (e.g., "scout")' },
+        id: { type: 'string', description: 'Unique agent ID (alphanumeric, dashes, underscores)' },
         name: { type: 'string', description: 'Display name' },
-        command: { type: 'string', description: 'Command to run (e.g., "node")' },
-        args: { type: 'array', items: { type: 'string' }, description: 'Command arguments' },
+        runtime: { type: 'string', enum: ['typescript', 'exec'], description: 'Default "typescript"' },
+        source: { type: 'string', description: 'TypeScript source (typescript runtime). Bundled on create. Omit to upload later via write_agent_code.' },
+        command: { type: 'string', description: 'Executable (exec runtime only)' },
+        args: { type: 'array', items: { type: 'string' }, description: 'Command args (exec runtime only)' },
+        cwd: { type: 'string', description: 'Working directory (exec runtime only)' },
         type: { type: 'string', enum: ['cron', 'long-running', 'manual'] },
         cronSchedule: { type: 'string', description: 'Cron expression' },
         goal: { type: 'string', description: 'Agent mission' },
@@ -39,12 +42,12 @@ const TOOLS: Anthropic.Tool[] = [
         wakeOnAssignment: { type: 'boolean' },
         timeoutSec: { type: 'number' },
       },
-      required: ['id', 'name', 'command'],
+      required: ['id', 'name'],
     },
   },
   {
     name: 'update_agent',
-    description: 'Update agent configuration',
+    description: 'Update agent configuration (not code — use write_agent_code to update source).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -110,14 +113,25 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'write_agent_code',
-    description: 'Write or update the TypeScript code for an agent script file',
+    description: 'Upload TypeScript source for a typescript-runtime agent. Zoogent bundles with esbuild and stores the code. Returns bundle errors if the source references unknown imports. Does not apply to exec-runtime agents.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        id: { type: 'string', description: 'Agent ID (file will be agents/{id}.ts)' },
-        code: { type: 'string', description: 'Full TypeScript source code' },
+        id: { type: 'string', description: 'Agent ID' },
+        source: { type: 'string', description: 'Full TypeScript source code' },
       },
-      required: ['id', 'code'],
+      required: ['id', 'source'],
+    },
+  },
+  {
+    name: 'get_agent_code',
+    description: 'Read the current TypeScript source for an agent. Use to inspect before editing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: 'Agent ID' },
+      },
+      required: ['id'],
     },
   },
 ];
@@ -137,16 +151,39 @@ async function executeTool(name: string, input: any, teamId: string): Promise<st
       const existing = db.select().from(agents).where(eq(agents.id, input.id)).get();
       if (existing) return `Agent "${input.id}" already exists`;
 
+      if (!/^[a-zA-Z0-9_-]+$/.test(input.id)) {
+        return `Invalid id: must be alphanumeric with dashes/underscores`;
+      }
       if (input.cronSchedule && !cron.validate(input.cronSchedule)) {
         return `Invalid cron expression: ${input.cronSchedule}`;
+      }
+
+      const runtime: 'typescript' | 'exec' = input.runtime === 'exec' ? 'exec' : 'typescript';
+      if (runtime === 'exec' && !input.command) {
+        return `command is required for exec runtime`;
+      }
+
+      // Bundle source atomically for typescript runtime
+      let bundle: string | null = null;
+      let bundleHash: string | null = null;
+      if (runtime === 'typescript' && typeof input.source === 'string' && input.source.length > 0) {
+        const r = await bundleAgentSource(input.source, input.id);
+        if (!r.ok) return `Bundle failed:\n${r.error}`;
+        bundle = r.bundle;
+        bundleHash = r.hash;
       }
 
       db.insert(agents).values({
         id: input.id,
         teamId,
         name: input.name,
-        command: input.command,
-        args: input.args ? JSON.stringify(input.args) : null,
+        runtime,
+        source: runtime === 'typescript' ? (typeof input.source === 'string' ? input.source : null) : null,
+        bundle,
+        bundleHash,
+        command: runtime === 'exec' ? input.command : null,
+        args: runtime === 'exec' && input.args ? JSON.stringify(input.args) : null,
+        cwd: runtime === 'exec' ? (input.cwd ?? null) : null,
         type: input.type || 'manual',
         cronSchedule: input.cronSchedule ?? null,
         goal: input.goal ?? null,
@@ -158,21 +195,27 @@ async function executeTool(name: string, input: any, teamId: string): Promise<st
       }).run();
 
       if (input.type === 'cron' && input.cronSchedule) refreshAgent(input.id);
-      return `Agent "${input.id}" created`;
+      return `Agent "${input.id}" created (${runtime})${bundle ? ' with bundled code' : ''}`;
     }
 
     case 'update_agent': {
       const { id, ...updates } = input;
-      // Verify agent belongs to this team
       const agent = db.select().from(agents).where(and(eq(agents.id, id), eq(agents.teamId, teamId))).get();
       if (!agent) return `Agent "${id}" not found`;
+      if ('source' in updates) return `Use write_agent_code to update source, not update_agent.`;
+      if ('runtime' in updates && updates.runtime !== agent.runtime) return `runtime cannot be changed after creation.`;
 
-      const UPDATABLE_FIELDS = ['name', 'description', 'goal', 'model', 'type', 'command', 'args', 'cwd', 'cronSchedule', 'enabled', 'budgetMonthlyCents', 'wakeOnAssignment', 'timeoutSec', 'graceSec'];
+      const CONFIG_FIELDS = ['name', 'description', 'goal', 'model', 'type', 'cronSchedule', 'enabled', 'budgetMonthlyCents', 'wakeOnAssignment', 'timeoutSec', 'graceSec'];
+      const EXEC_FIELDS = ['command', 'args', 'cwd'];
       const data: any = { updatedAt: new Date() };
       for (const [k, v] of Object.entries(updates)) {
-        if (v === undefined || !UPDATABLE_FIELDS.includes(k)) continue;
-        if (k === 'args') { data.args = JSON.stringify(v); continue; }
-        data[k] = v;
+        if (v === undefined) continue;
+        if (CONFIG_FIELDS.includes(k)) { data[k] = v; continue; }
+        if (EXEC_FIELDS.includes(k)) {
+          if (agent.runtime !== 'exec') return `${k} only applies to exec-runtime agents.`;
+          if (k === 'args') data.args = JSON.stringify(v); else data[k] = v;
+          continue;
+        }
       }
       db.update(agents).set(data).where(eq(agents.id, id)).run();
       refreshAgent(id);
@@ -239,11 +282,18 @@ async function executeTool(name: string, input: any, teamId: string): Promise<st
     }
 
     case 'write_agent_code': {
-      const outDir = resolve(process.cwd(), 'agents');
-      if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-      const outPath = resolve(outDir, `${input.id}.ts`);
-      writeFileSync(outPath, input.code);
-      return `Agent code written to ${outPath}`;
+      const src = input.source ?? input.code;  // accept legacy `code` field
+      if (typeof src !== 'string') return `source (string) is required.`;
+      const result = await setAgentCode(teamId, input.id, src);
+      if (!result.ok) return `Bundle failed:\n${result.error}`;
+      const warn = result.warnings && result.warnings.length > 0 ? `\nWarnings:\n${result.warnings.join('\n')}` : '';
+      return `Agent "${input.id}" code uploaded (hash: ${result.hash!.slice(0, 12)}).${warn}`;
+    }
+
+    case 'get_agent_code': {
+      const code = getAgentCode(teamId, input.id);
+      if (!code) return `Agent "${input.id}" has no code (not typescript runtime or not found).`;
+      return JSON.stringify(code, null, 2);
     }
 
     default:
@@ -287,12 +337,14 @@ ${skillsContent}
 
 ## Rules
 
-- When creating agents, always: set a clear goal, choose the right model for the task, assign relevant skills
-- When writing agent code, use the ZooGent SDK (zoogent/client) — see code-generation skill for patterns
-- Start simple: 1-2 agents first, add complexity only when needed
-- For agent scripts: command = "node", args = ["--experimental-strip-types", "agents/{id}.ts"]
-- Report what you did after each action (e.g., "Created agent 'scout' with goal: ...")
-- If an agent fails, read the logs (get_logs) and fix the code`;
+- Default runtime is typescript. Pass TS source in \`create_agent\` or upload via \`write_agent_code\`. Zoogent bundles with esbuild and runs via node.
+- Use runtime="exec" only when orchestrating an external binary/script (rare) — code lives outside zoogent.
+- When creating agents, always: set a clear goal, choose the right model for the task, assign relevant skills.
+- When writing agent code, use the ZooGent SDK (zoogent/client) — see code-generation skill for SDK API + blessed dependency list.
+- Start simple: 1-2 agents first, add complexity only when needed.
+- Report what you did after each action (e.g., "Created agent 'scout' with goal: ...").
+- If \`write_agent_code\` returns a bundle error, fix the source and call it again — don't leave an agent unrunnable.
+- If an agent run fails, read the logs (get_logs) and fix the code.`;
 }
 
 // ─── Chat API ────────────────────────────────────────────────────────────────

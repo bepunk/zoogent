@@ -141,6 +141,15 @@ Multiple isolated teams in one instance. Each team has its own agents, skills, m
 ### Architect AI
 Built-in Claude-powered chat that designs and manages your agent team. Creates agents, writes skills, generates TypeScript code, assigns skills, triggers runs, reads logs - all through conversation. SSE streaming with real-time tool execution display. Each team has its own Architect with separate chat history.
 
+### Agent Runtimes
+
+| Runtime | Source of code | When to use |
+|---------|----------------|-------------|
+| `typescript` (default) | Stored in zoogent DB, uploaded via MCP/chat, bundled with esbuild | ~95% of agents — write/iterate from Claude Code, remote deploy just works |
+| `exec` | Lives outside zoogent; you provide `command` + `args` + `cwd` | Wrapping binaries, Python/Go scripts, existing tooling |
+
+For `typescript`, agents can import from a curated blessed set: `@anthropic-ai/sdk`, `openai`, `@google/generative-ai`, `axios`, `cheerio`, `googleapis`, `zod`, `p-limit`/`p-retry`/`p-map`/`p-queue`, `date-fns`, `yaml`, `csv-parse`/`csv-stringify`, `cheerio`, `fast-xml-parser`, `marked`, `turndown`, `slugify`, `tiktoken`, `nodemailer`, `imapflow`, `mailparser`, `jsonwebtoken`, plus all Node built-ins. Unknown imports fail at upload with a readable error. The full list lives in the `code-generation` system skill — call `get_agent_guide("code-generation")` from MCP.
+
 ### Agent Types
 
 | Type | How it runs | Example |
@@ -248,6 +257,8 @@ All env vars use `${VAR}` syntax - set actual values in your hosting platform (D
 
 ## Agent SDK
 
+Typescript agents use `zoogent/client` for context + task flow:
+
 ```typescript
 import {
   // Tasks
@@ -267,9 +278,21 @@ import {
 } from 'zoogent/client';
 ```
 
-`@anthropic-ai/sdk` is bundled - agents can `import Anthropic from '@anthropic-ai/sdk'` directly.
+For runtime="typescript" agents, zoogent hosts these deps — your code just imports them.
+For runtime="exec" in any language, call the HTTP API directly: see the `/llms-agent-guide.txt` endpoint for the reporting contract.
 
 All SDK calls are fail-open (errors caught silently). All functions read `ZOOGENT_*` env vars automatically.
+
+### Workflow
+
+```
+1. MCP: create_agent with source=<boilerplate> → zoogent bundles with esbuild, agent is ready
+2. MCP: trigger_agent + get_logs → test
+3. MCP: write_agent_code with new source → re-bundle, iterate
+```
+
+No local `agents/` directory to keep in sync. Source of truth is zoogent's DB. On remote deploys,
+the same MCP calls work against `ZOOGENT_URL` without any deployment step for the agent code itself.
 
 ## Environment Variables
 
@@ -321,6 +344,8 @@ All SDK calls are fail-open (errors caught silently). All functions read `ZOOGEN
 - Log sanitization (strips API keys from stdout/stderr)
 - First user = owner, registration closed after setup
 - Team isolation: agents, skills, memory, knowledge scoped per team
+- **Agent sandbox**: TypeScript agents always run with Node.js 24 `--permission`. Write access restricted to the team shared folder (`ZOOGENT_SHARED_DIR = data/teams/{id}/shared/`). No child_process spawning, no native addons. `--max-old-space-size=512` applied.
+- **Shared team folder**: `data/teams/{id}/shared/` — agents in the same team can exchange files (images, video, CSVs) without cloud storage. Persists across restarts if `data/` is mounted as a Docker volume.
 
 ## License
 

@@ -19,7 +19,7 @@ describe('API System Skills', () => {
     const res = await req('/api/system-skills');
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data).toHaveLength(6);
+    expect(data).toHaveLength(7);
 
     const paths = data.map((s: any) => s.path);
     expect(paths).toContain('system/team-design.md');
