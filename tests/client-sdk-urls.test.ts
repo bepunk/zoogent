@@ -144,4 +144,26 @@ describe('client SDK URL regressions (v0.4 team-scoped routing)', () => {
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe(`${BASE}/api/teams/${TEAM_ID}/agents/telegram-bot/store`);
   });
+
+  it('crossStoreSet PUTs to /agents/:id/store/:key with body { value, ttlSeconds }', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{"ok":true}', {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+    const { crossStoreSet } = await import('../src/client/index.ts');
+    const ok = await crossStoreSet('telegram-bot', 'shared:flag', { ready: true }, 60);
+    expect(ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/teams/${TEAM_ID}/agents/telegram-bot/store/shared%3Aflag`);
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(init?.body as string)).toEqual({ value: { ready: true }, ttlSeconds: 60 });
+  });
+
+  it('crossStoreSet returns false on 404 (cross-team or unknown agent)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{"error":"Agent not found"}', {
+      status: 404, headers: { 'Content-Type': 'application/json' },
+    }));
+    const { crossStoreSet } = await import('../src/client/index.ts');
+    const ok = await crossStoreSet('other-agent', 'k', 'v');
+    expect(ok).toBe(false);
+  });
 });

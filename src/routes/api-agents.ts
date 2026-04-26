@@ -501,6 +501,45 @@ apiAgentsRoutes.get('/:id/store/:key', async (c) => {
   catch { return c.json({ key: entry.key, value: entry.value, updatedAt: entry.updatedAt, expiresAt: entry.expiresAt }); }
 });
 
+// PUT /api/agents/:id/store/:key — set value (cross-agent write within the same team)
+apiAgentsRoutes.put('/:id/store/:key', async (c) => {
+  const teamId = c.get('teamId' as any);
+  const agentId = c.req.param('id');
+  const key = c.req.param('key');
+  const db = getDb();
+
+  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  if (agent.teamId !== teamId) return c.json({ error: 'Agent not found' }, 404);
+
+  let body: any;
+  try { body = await c.req.json(); }
+  catch { return c.json({ error: 'Invalid JSON body' }, 400); }
+  const { value, ttlSeconds } = body ?? {};
+  if (value === undefined) return c.json({ error: 'value is required' }, 400);
+
+  const now = new Date();
+  const expiresAt = ttlSeconds ? new Date(now.getTime() + ttlSeconds * 1000) : null;
+  const jsonValue = typeof value === 'string' ? value : JSON.stringify(value);
+
+  const existing = db.select().from(agentStore)
+    .where(and(eq(agentStore.agentId, agentId), eq(agentStore.key, key)))
+    .get();
+
+  if (existing) {
+    db.update(agentStore)
+      .set({ value: jsonValue, updatedAt: now, expiresAt })
+      .where(eq(agentStore.id, existing.id))
+      .run();
+  } else {
+    db.insert(agentStore).values({
+      agentId, key, value: jsonValue, createdAt: now, updatedAt: now, expiresAt,
+    }).run();
+  }
+
+  return c.json({ ok: true });
+});
+
 // DELETE /api/agents/:id/store/:key — delete key
 apiAgentsRoutes.delete('/:id/store/:key', async (c) => {
   const teamId = c.get('teamId' as any);

@@ -422,13 +422,14 @@ POST   /api/teams/:teamId/agents/:id/disable  - Disable agent (stops if running,
 GET    /api/teams/:teamId/agents/:id/runs     - Run history
 GET    /api/teams/:teamId/agents/:id/runs/:runId - Run details + stdout/stderr logs
 
-### Agent Store (Dashboard / MCP / cross-agent reads)
+### Agent Store (Dashboard / MCP / cross-agent)
 
 GET    /api/teams/:teamId/agents/:id/store           - List store entries (optional ?prefix= filter)
 GET    /api/teams/:teamId/agents/:id/store/:key      - Get store value, returns { key, value, updatedAt, expiresAt }
+PUT    /api/teams/:teamId/agents/:id/store/:key      - Set store value (body: { value, ttlSeconds? }) — last-write-wins
 DELETE /api/teams/:teamId/agents/:id/store/:key      - Delete store entry
 
-Writes go through /api/report/store (PUT) keyed by agentId in the body.
+Agents may also write their own store via PUT /api/report/store (with agentId in the body).
 
 ### Skills
 
@@ -612,12 +613,13 @@ Team Knowledge:
   reportTeamKnowledge({ title, content }) -> void
 
 Store (persistent working data — URLs, IDs, tracking state between runs):
-  storeGet(key) -> any | null                  (own store)
-  storeSet(key, value, ttlSeconds?) -> void    (own store)
-  storeDelete(key) -> boolean                  (own store)
-  storeKeys(prefix?) -> string[]               (own store)
-  crossStoreGet(agentId, key) -> any | null    (another agent's store, same team, read-only)
-  crossStoreKeys(agentId, prefix?) -> string[] (another agent's keys, same team)
+  storeGet(key) -> any | null                            (own store)
+  storeSet(key, value, ttlSeconds?) -> void              (own store)
+  storeDelete(key) -> boolean                            (own store)
+  storeKeys(prefix?) -> string[]                         (own store)
+  crossStoreGet(agentId, key) -> any | null              (another agent's store, same team)
+  crossStoreKeys(agentId, prefix?) -> string[]           (another agent's keys, same team)
+  crossStoreSet(agentId, key, value, ttlSeconds?) -> bool (write to another agent's store, last-write-wins)
 
 Context:
   getGoal() -> string  (reads ZOOGENT_AGENT_GOAL env var)

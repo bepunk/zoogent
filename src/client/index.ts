@@ -336,6 +336,30 @@ export async function crossStoreKeys(agentId: string, prefix?: string): Promise<
   );
 }
 
+/**
+ * Write a value to another agent's store (same team only). Last-write-wins —
+ * concurrent writers will overwrite each other without conflict detection. Use
+ * sparingly: prefer the producer-writes / consumer-reads pattern over multiple
+ * writers. Returns true on success.
+ */
+export async function crossStoreSet(
+  agentId: string,
+  key: string,
+  value: any,
+  ttlSeconds?: number,
+): Promise<boolean> {
+  return safeCall(
+    async () => {
+      await apiCall(teamScope(`/agents/${agentId}/store/${encodeURIComponent(key)}`), {
+        method: 'PUT',
+        body: JSON.stringify({ value, ttlSeconds }),
+      });
+      return true;
+    },
+    false,
+  );
+}
+
 // ─── Heartbeat ──────────────────────────────────────────────────────────────────
 
 export async function heartbeat(): Promise<void> {

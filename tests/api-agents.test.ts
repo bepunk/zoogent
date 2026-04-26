@@ -3,6 +3,7 @@ import app from '../src/index.js';
 import { createTestTeam, createTestAgent, createTestSkill } from './helpers.js';
 import { getDb } from '../src/db/index.js';
 import { agentStore } from '../src/db/schema.js';
+import { eq, and } from 'drizzle-orm';
 
 const API_KEY = process.env.ZOOGENT_API_KEY || 'zg_test-key-for-testing';
 
@@ -264,6 +265,57 @@ describe('API Agent Store', () => {
 
     // Try to read teamA's agent store from teamB's URL — should 404
     const res = await req(`/api/teams/${teamB.id}/agents/store-cross-a/store/secret`);
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT store/:key writes a value and round-trips through GET', async () => {
+    const team = createTestTeam('Agent Store Put');
+    createTestAgent(team.id, { id: 'store-a5' });
+
+    const putRes = await req(`/api/teams/${team.id}/agents/store-a5/store/shared%3Aflag`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: { ready: true } }),
+    });
+    expect(putRes.status).toBe(200);
+    expect(await putRes.json()).toEqual({ ok: true });
+
+    const getRes = await req(`/api/teams/${team.id}/agents/store-a5/store/shared%3Aflag`);
+    expect(getRes.status).toBe(200);
+    const data = await getRes.json();
+    expect(data.value).toEqual({ ready: true });
+  });
+
+  it('PUT store/:key with TTL persists expiresAt and read returns 404 once expired', async () => {
+    const team = createTestTeam('Agent Store TTL');
+    createTestAgent(team.id, { id: 'store-a6' });
+
+    // ttl 0 → expiresAt = now, considered expired immediately by the GET path
+    const putRes = await req(`/api/teams/${team.id}/agents/store-a6/store/transient`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: 'v', ttlSeconds: 0 }),
+    });
+    expect(putRes.status).toBe(200);
+
+    // Backdate updatedAt/expiresAt to ensure expiry check fires
+    const db = getDb();
+    db.update(agentStore)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(and(eq(agentStore.agentId, 'store-a6'), eq(agentStore.key, 'transient')))
+      .run();
+
+    const getRes = await req(`/api/teams/${team.id}/agents/store-a6/store/transient`);
+    expect(getRes.status).toBe(404);
+  });
+
+  it('PUT store/:key rejects cross-team writes with 404', async () => {
+    const teamA = createTestTeam('Cross Put A');
+    const teamB = createTestTeam('Cross Put B');
+    createTestAgent(teamA.id, { id: 'store-cross-put-a' });
+
+    const res = await req(`/api/teams/${teamB.id}/agents/store-cross-put-a/store/x`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: 'leak' }),
+    });
     expect(res.status).toBe(404);
   });
 });

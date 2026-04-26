@@ -337,12 +337,13 @@ await image.writeAsync(\`\${sharedDir}/output.jpg\`);
 ### Store (persistent key-value per agent)
 - \`storeGet(key)\`, \`storeSet(key, value, ttlSeconds?)\` — own store
 - \`storeDelete(key)\`, \`storeKeys(prefix?)\` — own store
-- \`crossStoreGet(agentId, key)\` — read another agent's store (same team only, read-only)
+- \`crossStoreGet(agentId, key)\` — read another agent's store (same team only)
 - \`crossStoreKeys(agentId, prefix?)\` — list another agent's keys (same team only)
+- \`crossStoreSet(agentId, key, value, ttlSeconds?)\` — write to another agent's store (same team only)
 
-To share state between agents in the same team, the producer writes with \`storeSet\`,
-and consumers read with \`crossStoreGet(producerAgentId, key)\`. Cross-agent writes
-are intentionally not exposed — last-write-wins concurrency is a foot-gun.
+Pattern: prefer producer-writes / consumer-reads. The producer writes with \`storeSet\`
+and consumers read with \`crossStoreGet(producerAgentId, key)\`. Use \`crossStoreSet\`
+sparingly — it's last-write-wins, with no conflict detection.
 
 ### Skills
 - \`loadSkill(path): string | null\` — on-demand skill read

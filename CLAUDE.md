@@ -283,8 +283,8 @@ reportCost, reportMemory, reportTeamKnowledge
 getGoal, getMemories, getSkills, getTeamKnowledge
 // Store (own)
 storeGet, storeSet, storeDelete, storeKeys
-// Cross-agent store (read-only, same team)
-crossStoreGet, crossStoreKeys
+// Cross-agent store (same team)
+crossStoreGet, crossStoreKeys, crossStoreSet
 // Skills
 loadSkill, loadSkills, loadSkillRemote
 // Consensus

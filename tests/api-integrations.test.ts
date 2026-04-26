@@ -32,9 +32,9 @@ describe('API Agent Integrations', () => {
     const data = await res.json();
     expect(data.provider).toBe('gmail');
     expect(data.name).toBe('my_gmail');
-    // Credentials should be masked (first 4 chars + dots)
-    expect(data.credentials.client_id).toBe('abc1••••');
-    expect(data.credentials.client_secret).toBe('secr••••');
+    // Credentials masked: dots + last 5 chars (matches maskValue in src/lib/crypto.ts)
+    expect(data.credentials.client_id).toBe('•••••23456');
+    expect(data.credentials.client_secret).toBe('•••••et789');
     expect(data.id).toBeDefined();
   });
 
