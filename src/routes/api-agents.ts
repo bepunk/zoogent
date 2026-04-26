@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, and, desc, lt } from 'drizzle-orm';
+import { eq, and, desc, lt, like } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { agents, agentRuns, agentSkills, agentStore, agentIntegrations, teamCodeLibrary } from '../db/schema.js';
 import { startAgent, stopAgent, isRunning } from '../core/process-manager.js';
@@ -442,10 +442,11 @@ apiAgentsRoutes.post('/:id/unassign-skill', async (c) => {
 
 // ─── Agent Store (dashboard/MCP view) ────────────────────────────────────────
 
-// GET /api/agents/:id/store — list all keys
+// GET /api/agents/:id/store — list all keys (optional ?prefix= filter)
 apiAgentsRoutes.get('/:id/store', async (c) => {
   const teamId = c.get('teamId' as any);
   const agentId = c.req.param('id');
+  const prefix = c.req.query('prefix');
   const db = getDb();
 
   const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
@@ -457,12 +458,15 @@ apiAgentsRoutes.get('/:id/store', async (c) => {
     .where(and(eq(agentStore.agentId, agentId), lt(agentStore.expiresAt, new Date())))
     .run();
 
+  const conditions = [eq(agentStore.agentId, agentId)];
+  if (prefix) conditions.push(like(agentStore.key, `${prefix}%`));
+
   const entries = db.select({
     key: agentStore.key,
     value: agentStore.value,
     updatedAt: agentStore.updatedAt,
     expiresAt: agentStore.expiresAt,
-  }).from(agentStore).where(eq(agentStore.agentId, agentId)).all();
+  }).from(agentStore).where(and(...conditions)).all();
 
   return c.json(entries.map(e => {
     try { return { ...e, value: JSON.parse(e.value) }; }

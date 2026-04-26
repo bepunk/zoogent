@@ -335,8 +335,14 @@ await image.writeAsync(\`\${sharedDir}/output.jpg\`);
 - \`reportTeamKnowledge({ title, content })\`
 
 ### Store (persistent key-value per agent)
-- \`storeGet(key)\`, \`storeSet(key, value, ttlSeconds?)\`
-- \`storeDelete(key)\`, \`storeKeys(prefix?)\`
+- \`storeGet(key)\`, \`storeSet(key, value, ttlSeconds?)\` — own store
+- \`storeDelete(key)\`, \`storeKeys(prefix?)\` — own store
+- \`crossStoreGet(agentId, key)\` — read another agent's store (same team only, read-only)
+- \`crossStoreKeys(agentId, prefix?)\` — list another agent's keys (same team only)
+
+To share state between agents in the same team, the producer writes with \`storeSet\`,
+and consumers read with \`crossStoreGet(producerAgentId, key)\`. Cross-agent writes
+are intentionally not exposed — last-write-wins concurrency is a foot-gun.
 
 ### Skills
 - \`loadSkill(path): string | null\` — on-demand skill read

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import app from '../src/index.js';
 import { createTestTeam, createTestAgent, createTestSkill } from './helpers.js';
+import { getDb } from '../src/db/index.js';
+import { agentStore } from '../src/db/schema.js';
 
 const API_KEY = process.env.ZOOGENT_API_KEY || 'zg_test-key-for-testing';
 
@@ -207,6 +209,61 @@ describe('API Agent Store', () => {
     createTestAgent(team.id, { id: 'store-a2' });
 
     const res = await req(`/api/teams/${team.id}/agents/store-a2/store/nope`, { method: 'DELETE' });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET store/:key returns { value } shape with parsed JSON', async () => {
+    const team = createTestTeam('Agent Store Get');
+    createTestAgent(team.id, { id: 'store-a3' });
+    const db = getDb();
+    db.insert(agentStore).values({
+      agentId: 'store-a3',
+      key: 'tracked_comments',
+      value: JSON.stringify([{ id: 'c1' }, { id: 'c2' }]),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).run();
+
+    const res = await req(`/api/teams/${team.id}/agents/store-a3/store/tracked_comments`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.key).toBe('tracked_comments');
+    expect(data.value).toEqual([{ id: 'c1' }, { id: 'c2' }]);
+  });
+
+  it('GET store?prefix= filters keys server-side', async () => {
+    const team = createTestTeam('Agent Store Prefix');
+    createTestAgent(team.id, { id: 'store-a4' });
+    const db = getDb();
+    const now = new Date();
+    db.insert(agentStore).values([
+      { agentId: 'store-a4', key: 'perf:2026-04-25', value: '{"impressions":10}', createdAt: now, updatedAt: now },
+      { agentId: 'store-a4', key: 'perf:2026-04-26', value: '{"impressions":20}', createdAt: now, updatedAt: now },
+      { agentId: 'store-a4', key: 'tracked_comments', value: '[]', createdAt: now, updatedAt: now },
+    ]).run();
+
+    const res = await req(`/api/teams/${team.id}/agents/store-a4/store?prefix=perf:`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data).toHaveLength(2);
+    expect(data.map((e: any) => e.key).sort()).toEqual(['perf:2026-04-25', 'perf:2026-04-26']);
+  });
+
+  it('GET store/:key returns 404 when agent is in a different team (cross-team isolation)', async () => {
+    const teamA = createTestTeam('Cross Team A');
+    const teamB = createTestTeam('Cross Team B');
+    createTestAgent(teamA.id, { id: 'store-cross-a' });
+    const db = getDb();
+    db.insert(agentStore).values({
+      agentId: 'store-cross-a',
+      key: 'secret',
+      value: '"do-not-leak"',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).run();
+
+    // Try to read teamA's agent store from teamB's URL — should 404
+    const res = await req(`/api/teams/${teamB.id}/agents/store-cross-a/store/secret`);
     expect(res.status).toBe(404);
   });
 });

@@ -97,4 +97,51 @@ describe('client SDK URL regressions (v0.4 team-scoped routing)', () => {
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe(`${BASE}/api/report/cost`);
   });
+
+  it('crossStoreGet hits team-scoped /agents/:id/store/:key (path param, not query)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(
+      JSON.stringify({ key: 'tracked_comments', value: [{ id: 'c1' }] }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    const { crossStoreGet } = await import('../src/client/index.ts');
+    const result = await crossStoreGet<{ id: string }[]>('telegram-bot', 'tracked_comments');
+    expect(result).toEqual([{ id: 'c1' }]);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/teams/${TEAM_ID}/agents/telegram-bot/store/tracked_comments`);
+  });
+
+  it('crossStoreGet returns null when target agent is not found / not in team', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(
+      JSON.stringify({ error: 'Agent not found' }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    ));
+    const { crossStoreGet } = await import('../src/client/index.ts');
+    const result = await crossStoreGet('other-agent', 'k');
+    expect(result).toBeNull();
+  });
+
+  it('crossStoreKeys hits team-scoped /agents/:id/store?prefix=', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(
+      JSON.stringify([
+        { key: 'perf:2026-04-25', value: {} },
+        { key: 'perf:2026-04-26', value: {} },
+      ]),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    const { crossStoreKeys } = await import('../src/client/index.ts');
+    const keys = await crossStoreKeys('telegram-bot', 'perf:');
+    expect(keys).toEqual(['perf:2026-04-25', 'perf:2026-04-26']);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/teams/${TEAM_ID}/agents/telegram-bot/store?prefix=perf%3A`);
+  });
+
+  it('crossStoreKeys without prefix omits the query param', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('[]', {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+    const { crossStoreKeys } = await import('../src/client/index.ts');
+    await crossStoreKeys('telegram-bot');
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/teams/${TEAM_ID}/agents/telegram-bot/store`);
+  });
 });

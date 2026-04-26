@@ -302,6 +302,40 @@ export async function storeKeys(prefix?: string): Promise<string[]> {
   );
 }
 
+// ─── Cross-agent store reads (read-only, same team only) ─────────────────────
+
+/**
+ * Read another agent's store value. Both agents must be in the same team.
+ * Returns null if the key doesn't exist, is expired, or the target agent
+ * isn't in the caller's team.
+ */
+export async function crossStoreGet<T = any>(agentId: string, key: string): Promise<T | null> {
+  return safeCall(
+    async () => {
+      const data = await apiCall(teamScope(`/agents/${agentId}/store/${encodeURIComponent(key)}`));
+      return (data?.value as T) ?? null;
+    },
+    null,
+  );
+}
+
+/**
+ * List keys in another agent's store, optionally filtered by prefix.
+ * Returns an empty array if the target agent isn't in the caller's team.
+ */
+export async function crossStoreKeys(agentId: string, prefix?: string): Promise<string[]> {
+  return safeCall(
+    async () => {
+      const path = prefix
+        ? `/agents/${agentId}/store?prefix=${encodeURIComponent(prefix)}`
+        : `/agents/${agentId}/store`;
+      const data = await apiCall(teamScope(path));
+      return Array.isArray(data) ? data.map((e: any) => e.key) : [];
+    },
+    [],
+  );
+}
+
 // ─── Heartbeat ──────────────────────────────────────────────────────────────────
 
 export async function heartbeat(): Promise<void> {
