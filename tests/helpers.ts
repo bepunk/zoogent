@@ -13,7 +13,15 @@ export function createTestTeam(name = 'Test Team') {
 
 export function createTestAgent(
   teamId: string,
-  overrides: Partial<{ id: string; name: string; command: string; type: string; runtime: 'typescript' | 'exec' }> = {},
+  overrides: Partial<{
+    id: string;
+    name: string;
+    command: string;
+    args: string[];
+    type: string;
+    runtime: 'typescript' | 'exec';
+    wakeOnAssignment: boolean;
+  }> = {},
 ) {
   const db = getDb();
   const id = overrides.id || `agent-${randomBytes(4).toString('hex')}`;
@@ -24,8 +32,9 @@ export function createTestAgent(
     teamId,
     runtime,
     command: runtime === 'exec' ? (overrides.command || 'echo') : null,
-    args: runtime === 'exec' ? JSON.stringify(['hello']) : null,
+    args: runtime === 'exec' ? JSON.stringify(overrides.args ?? ['hello']) : null,
     type: overrides.type || 'manual',
+    wakeOnAssignment: overrides.wakeOnAssignment ?? false,
   }).run();
   return id;
 }

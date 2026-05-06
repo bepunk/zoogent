@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { agents, agentRuns, costEvents, agentSkills, teamKnowledge, chatMessages, teamSettings, agentIntegrations, apiKeys, teams } from '../db/schema.js';
+import { agents, agentRuns, agentTasks, costEvents, agentSkills, teamKnowledge, chatMessages, teamSettings, agentIntegrations, apiKeys, teams } from '../db/schema.js';
 import { decryptEnv, isEncryptedEnv, sanitizeLogs, loadMasterKey, decrypt } from '../lib/crypto.js';
 import { startOfMonth } from '../lib/time.js';
 import { getTeamMonthlySpend } from './cost-tracker.js';
@@ -44,8 +44,49 @@ interface RunningProcess {
 
 const runningProcesses = new Map<string, RunningProcess>();
 
+// Tracks 'assignment' wakes that arrived while the agent was already running.
+// Drained on clean exit by `maybeRewake`; discarded on early-return abort paths.
+// In-memory only — restart recovery is handled by `cleanupOrphanRuns` plus
+// the next incoming createTask, which re-fires the wake from scratch.
+const pendingWakes = new Set<string>();
+
 export function isRunning(agentId: string): boolean {
   return runningProcesses.has(agentId);
+}
+
+const REWAKE_FAST_FAILURE_MS = 2000;
+
+/**
+ * Re-fires `startAgent` if a wake was queued while this agent was running.
+ * Called on every successful exit. Skipped on fast failures (crash-loop guard).
+ * Performs a cheap existence check on `agentTasks` (uses idx_tasks_agent_status)
+ * to avoid spurious empty runs when a multi-loop agent already drained the queue.
+ */
+function maybeRewake(agentId: string, durationMs: number, runStatus: 'success' | 'error' | 'timeout' | 'cancelled'): void {
+  if (!pendingWakes.has(agentId)) return;
+  pendingWakes.delete(agentId);
+
+  // Crash-loop guard: a fast non-success exit means the agent fataled at
+  // boot. Re-firing would just hit the same error in another tight loop.
+  if (runStatus !== 'success' && durationMs < REWAKE_FAST_FAILURE_MS) {
+    console.warn(`[process-manager] Skipping rewake for ${agentId}: ${runStatus} in ${durationMs}ms`);
+    return;
+  }
+
+  const db = getDb();
+  const stillPending = db
+    .select({ id: agentTasks.id })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.agentId, agentId), eq(agentTasks.status, 'pending')))
+    .limit(1)
+    .get();
+  if (!stillPending) return;
+
+  setImmediate(() => {
+    startAgent(agentId, 'assignment').catch((err) => {
+      console.error(`[process-manager] Pending wake re-fire failed for ${agentId}:`, err);
+    });
+  });
 }
 
 export async function startAgent(
@@ -55,7 +96,16 @@ export async function startAgent(
   // Max 1 concurrent run per agent — reserve slot immediately to prevent race conditions
   // (await on sync better-sqlite3 calls yields to event loop, allowing duplicate triggers)
   if (runningProcesses.has(agentId)) {
-    console.log(`[process-manager] Agent ${agentId} already running, skipping`);
+    // Queue assignment wakes that landed during a run so they fire after exit
+    // (fixes the wakeOnAssignment race where bursts dropped tasks).
+    // cron/manual/api collisions are intentionally not queued — those triggers
+    // have their own retry mechanisms (next cron tick, retry button, next API call).
+    if (trigger === 'assignment') {
+      pendingWakes.add(agentId);
+      console.log(`[process-manager] Agent ${agentId} already running, queued rewake on exit`);
+    } else {
+      console.log(`[process-manager] Agent ${agentId} already running, skipping`);
+    }
     return null;
   }
   runningProcesses.set(agentId, null as any); // reserve slot before any await
@@ -67,12 +117,14 @@ export async function startAgent(
   if (!agent) {
     console.error(`[process-manager] Agent ${agentId} not found`);
     runningProcesses.delete(agentId);
+    pendingWakes.delete(agentId);
     return null;
   }
 
   if (!agent.enabled) {
     console.log(`[process-manager] Agent ${agentId} is disabled, skipping`);
     runningProcesses.delete(agentId);
+    pendingWakes.delete(agentId);
     return null;
   }
 
@@ -84,12 +136,14 @@ export async function startAgent(
         : 'No code uploaded. Use write_agent_code (MCP) or PUT /agents/:id/code (HTTP).';
       console.log(`[process-manager] Agent ${agentId} not runnable: ${reason}`);
       runningProcesses.delete(agentId);
+      pendingWakes.delete(agentId);
       return null;
     }
   } else if (agent.runtime === 'exec') {
     if (!agent.command) {
       console.log(`[process-manager] Agent ${agentId} runtime=exec but command is null`);
       runningProcesses.delete(agentId);
+      pendingWakes.delete(agentId);
       return null;
     }
   }
@@ -112,6 +166,7 @@ export async function startAgent(
     if (spent >= agent.budgetMonthlyCents) {
       console.log(`[process-manager] Agent ${agentId} over budget: ${spent}/${agent.budgetMonthlyCents} cents`);
       runningProcesses.delete(agentId);
+      pendingWakes.delete(agentId);
       return null;
     }
   }
@@ -124,6 +179,7 @@ export async function startAgent(
       if (teamSpent >= team.budgetMonthlyCents) {
         console.log(`[process-manager] Team ${agent.teamId} over budget: ${teamSpent}/${team.budgetMonthlyCents} cents`);
         runningProcesses.delete(agentId);
+        pendingWakes.delete(agentId);
         return null;
       }
     }
@@ -259,6 +315,7 @@ export async function startAgent(
         stderr: `Failed to materialize bundle: ${String(err)}`,
       }).where(eq(agentRuns.id, run.id)).run();
       runningProcesses.delete(agentId);
+      pendingWakes.delete(agentId);
       return null;
     }
     spawnCommand = process.execPath; // node
@@ -413,6 +470,10 @@ export async function startAgent(
         console.log(`[process-manager] Error notification added to chat for ${agentId}`);
       } catch {}
     }
+
+    // Drain any wake events queued during this run (fixes the wakeOnAssignment
+    // race where bursts of createTask calls dropped tasks).
+    maybeRewake(agentId, durationMs, status);
   });
 
   // Store PID for orphan detection

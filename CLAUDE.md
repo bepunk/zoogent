@@ -186,6 +186,7 @@ zoogent mcp            # Start MCP server (stdio)
 - Long-running agents: `type === 'long-running'` → default timeout = 0 (no timeout)
 - Auto-restart: orphaned long-running agents restarted on server start (if enabled)
 - Self-healing: error/timeout runs insert chat message for Architect
+- Rewake on pending tasks: `wakeOnAssignment` is level-triggered. An `assignment` wake that arrives while the agent is already running is queued in `pendingWakes` (in-memory `Set`). After the run exits and the run record is updated, `maybeRewake` re-fires `startAgent('assignment')` iff (a) a wake was queued, AND (b) at least one task with `status='pending'` still exists for the agent. Crash-loop guard: a fast non-success exit (<2s, status `error`/`timeout`) skips the rewake. Early-return paths (agent missing/disabled, bundle error, no command, over budget, materialize failure) discard queued wakes without retrying — those failures are persistent.
 - Budget check: per-agent (`budgetMonthlyCents`) then per-team (`teams.budgetMonthlyCents`)
 - `ANTHROPIC_API_KEY` injected from `team_settings` (falls back to process.env)
 - `ZOOGENT_API_KEY` injected from `api_keys` table (first available key)
