@@ -347,16 +347,23 @@ pageRoutes.get('/teams/:slug/tasks', async (c) => {
   const { teamId, teamBase, teamSlug, teamName } = teamCtx(c);
   const filterAgent = c.req.query('agent');
   const filterStatus = c.req.query('status');
+  const PAGE_SIZE = 20;
+  const pageRaw = parseInt(c.req.query('page') || '1', 10);
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
   const db = getDb();
 
   const teamAgentIds = db.select({ id: agents.id }).from(agents).where(eq(agents.teamId, teamId)).all().map(a => a.id);
 
   let tasks: any[] = [];
+  let totalCount = 0;
   if (teamAgentIds.length > 0) {
-    const { inArray } = await import('drizzle-orm');
     const conditions: any[] = [inArray(agentTasks.agentId, teamAgentIds)];
     if (filterAgent) conditions.push(eq(agentTasks.agentId, filterAgent));
     if (filterStatus) conditions.push(eq(agentTasks.status, filterStatus as any));
+
+    const where = and(...conditions);
+    const countRow = db.select({ count: sql<number>`COUNT(*)` }).from(agentTasks).where(where).get();
+    totalCount = countRow?.count ?? 0;
 
     const rawTasks = db.select({
       id: agentTasks.id, title: agentTasks.title, status: agentTasks.status,
@@ -367,8 +374,11 @@ pageRoutes.get('/teams/:slug/tasks', async (c) => {
       createdAt: agentTasks.createdAt, completedAt: agentTasks.completedAt,
     }).from(agentTasks)
       .leftJoin(agents, eq(agentTasks.agentId, agents.id))
-      .where(and(...conditions))
-      .orderBy(desc(agentTasks.createdAt)).limit(100).all();
+      .where(where)
+      .orderBy(desc(agentTasks.createdAt))
+      .limit(PAGE_SIZE)
+      .offset((page - 1) * PAGE_SIZE)
+      .all();
 
     tasks = rawTasks.map(t => {
       let createdByAgentName: string | null = null;
@@ -381,8 +391,21 @@ pageRoutes.get('/teams/:slug/tasks', async (c) => {
   }
 
   const teamAgents = db.select({ id: agents.id, name: agents.name }).from(agents).where(eq(agents.teamId, teamId)).all();
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  return c.html(<TasksPage tasks={tasks} agents={teamAgents} filterAgent={filterAgent} filterStatus={filterStatus} teamBase={teamBase} teamSlug={teamSlug} teamName={teamName} />);
+  return c.html(<TasksPage
+    tasks={tasks}
+    agents={teamAgents}
+    filterAgent={filterAgent}
+    filterStatus={filterStatus}
+    page={page}
+    totalPages={totalPages}
+    totalCount={totalCount}
+    pageSize={PAGE_SIZE}
+    teamBase={teamBase}
+    teamSlug={teamSlug}
+    teamName={teamName}
+  />);
 });
 
 // ─── Costs ─────────────────────────────────────────────────────────────────
