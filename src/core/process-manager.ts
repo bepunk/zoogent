@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { eq, and, sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { agents, agentRuns, agentTasks, costEvents, agentSkills, teamKnowledge, chatMessages, teamSettings, agentIntegrations, apiKeys, teams } from '../db/schema.js';
+import { agents, agentRuns, agentTasks, costEvents, agentSkills, teamKnowledge, teamSettings, agentIntegrations, apiKeys, teams } from '../db/schema.js';
 import { decryptEnv, isEncryptedEnv, sanitizeLogs, loadMasterKey, decrypt } from '../lib/crypto.js';
 import { startOfMonth } from '../lib/time.js';
 import { getTeamMonthlySpend } from './cost-tracker.js';
@@ -456,20 +456,9 @@ export async function startAgent(
 
     console.log(`[process-manager] Agent ${agentId} finished: ${status} (${code}) in ${durationMs}ms`);
 
-    // Self-healing: notify Architect AI about errors
-    if (status === 'error' || status === 'timeout') {
-      try {
-        const errorSummary = stderrText
-          ? stderrText.slice(0, 500)
-          : `Agent exited with code ${code}`;
-        db.insert(chatMessages).values({
-          teamId: agent.teamId,
-          role: 'user',
-          content: `[Auto] Agent "${agentId}" failed (${status}, exit code ${code}).\n\nStderr:\n${errorSummary}\n\nUse get_logs to see full output and suggest a fix.`,
-        }).run();
-        console.log(`[process-manager] Error notification added to chat for ${agentId}`);
-      } catch {}
-    }
+    // Errors and timeouts are surfaced on the agent detail page (Recent errors
+    // panel) — derived from agent_runs.status + stderr. The Architect chat is
+    // no longer auto-notified to keep the conversation clean.
 
     // Drain any wake events queued during this run (fixes the wakeOnAssignment
     // race where bursts of createTask calls dropped tasks).

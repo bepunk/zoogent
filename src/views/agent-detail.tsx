@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { Layout } from './layout.js';
-import { formatUsd, timeAgo, formatDuration } from '../lib/time.js';
+import { formatUsd, timeAgo, formatDuration, formatRunTimestamp } from '../lib/time.js';
 
 interface Integration {
   id: string;
@@ -13,6 +13,7 @@ interface Integration {
 interface AgentDetailProps {
   agent: any;
   runs: any[];
+  errorRuns: any[];
   skills: any[];
   memories: any[];
   integrations: Integration[];
@@ -24,7 +25,7 @@ interface AgentDetailProps {
   teamName?: string;
 }
 
-export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, skills, memories, integrations, monthlySpendCents, running, totalRuns, teamBase, teamSlug, teamName }) => {
+export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, errorRuns, skills, memories, integrations, monthlySpendCents, running, totalRuns, teamBase, teamSlug, teamName }) => {
   const statusClass = running ? 'badge-running' : agent.enabled ? 'badge-success' : 'badge-idle';
   const statusLabel = running ? 'Running' : agent.enabled ? 'Enabled' : 'Disabled';
 
@@ -102,6 +103,51 @@ export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, skills, mem
           <div class="stat-label">Timeout</div>
           <div class="font-display" style="font-size: 20px; font-weight: 700; margin-top: 6px;">{agent.timeoutSec}s</div>
         </div>
+      </div>
+
+      {/* Recent errors */}
+      <div class="animate-in delay-3" style="margin-bottom: 40px;">
+        <h2 class="section-title" style="margin-bottom: 16px;">Recent errors</h2>
+        {errorRuns.length === 0 ? (
+          <div class="card" style="padding: 22px 26px; color: var(--text-muted); font-size: 15px;">
+            No recent errors
+          </div>
+        ) : (
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            {errorRuns.map((run: any) => {
+              const stderrFull = run.stderr || '';
+              return (
+                <div class="card" style="padding: 18px 22px; border-left: 4px solid var(--error);">
+                  <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px;">
+                    <span class="badge badge-error">{run.status}</span>
+                    <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
+                      {run.finishedAt ? formatRunTimestamp(new Date(run.finishedAt)) : '—'}
+                    </span>
+                    <span class="font-mono" style="font-size: 13px; color: var(--text-muted);">
+                      exit {run.exitCode ?? '—'}
+                    </span>
+                    {run.durationMs != null && (
+                      <span class="font-mono" style="font-size: 13px; color: var(--text-muted);">
+                        {formatDuration(run.durationMs)}
+                      </span>
+                    )}
+                    <span class="font-mono" style="font-size: 13px; color: var(--text-muted);">run #{run.id}</span>
+                  </div>
+                  {stderrFull ? (
+                    <details>
+                      <summary style="cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600;">
+                        stderr ({stderrFull.length} chars)
+                      </summary>
+                      <pre class="font-mono" style="font-size: 13px; background: var(--bg-inset); padding: 12px; border-radius: 8px; overflow: auto; margin-top: 8px; max-height: 320px; white-space: pre-wrap; color: var(--text-primary);">{stderrFull}</pre>
+                    </details>
+                  ) : (
+                    <div style="font-size: 13px; color: var(--text-muted);">No stderr captured</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Runs */}

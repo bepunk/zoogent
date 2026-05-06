@@ -24,6 +24,17 @@ export function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+export function formatRunTimestamp(date: Date): string {
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 export function startOfMonth(): Date {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);

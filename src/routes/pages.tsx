@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { eq, desc, asc, sql, and } from 'drizzle-orm';
+import { eq, desc, asc, sql, and, inArray } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { getDb } from '../db/index.js';
 import { agents, agentRuns, agentSkills, agentMemories, agentTasks, skills as skillsTable, users, teamKnowledge, teams, teamMembers, teamSettings, agentIntegrations, apiKeys as apiKeysTable } from '../db/schema.js';
@@ -231,6 +231,10 @@ pageRoutes.get('/teams/:slug/agents/:id', async (c) => {
     .where(eq(agentRuns.agentId, id))
     .orderBy(desc(agentRuns.startedAt)).limit(20).all();
 
+  const errorRuns = db.select().from(agentRuns)
+    .where(and(eq(agentRuns.agentId, id), inArray(agentRuns.status, ['error', 'timeout'])))
+    .orderBy(desc(agentRuns.finishedAt)).limit(10).all();
+
   const totalRunsResult = db.select({ count: sql<number>`COUNT(*)` }).from(agentRuns)
     .where(eq(agentRuns.agentId, id)).get();
 
@@ -255,7 +259,7 @@ pageRoutes.get('/teams/:slug/agents/:id', async (c) => {
   });
 
   return c.html(<AgentDetailPage
-    agent={agent} runs={runs} skills={agentSkillsList} memories={memories}
+    agent={agent} runs={runs} errorRuns={errorRuns} skills={agentSkillsList} memories={memories}
     integrations={integrations}
     monthlySpendCents={monthlySpend} running={isRunning(id)}
     totalRuns={totalRunsResult?.count ?? 0} teamBase={teamBase}

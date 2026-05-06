@@ -405,6 +405,19 @@ html { overflow-y: auto; scrollbar-gutter: stable; }
   font-size: 15px;
 }
 
+.chat-bubble-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1;
+  user-select: none;
+  opacity: 0.75;
+}
+
+[data-theme="dark"] .chat-bubble-user .chat-bubble-time {
+  color: rgba(255,255,255,0.7);
+}
+
 [data-theme="dark"] .chat-bubble-user {
   background: var(--accent);
   color: #fff;

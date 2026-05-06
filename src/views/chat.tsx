@@ -47,6 +47,7 @@ export const ChatPage: FC<ChatPageProps> = ({ messages, hasApiKey, teamBase, tea
                 <div class={`chat-bubble chat-bubble-${msg.role}`}>
                   <div class="chat-bubble-text" dangerouslySetInnerHTML={{ __html: escapeHtml(msg.content) }} />
                   {msg.toolCalls && renderToolCalls(msg.toolCalls)}
+                  <div class="chat-bubble-time" data-iso={new Date(msg.createdAt).toISOString()}></div>
                 </div>
                 {msg.role === 'user' && <div class="chat-avatar chat-avatar-user">User</div>}
               </div>
@@ -119,10 +120,28 @@ export const ChatPage: FC<ChatPageProps> = ({ messages, hasApiKey, teamBase, tea
           return div.innerHTML;
         }
 
+        function formatChatTime(date) {
+          return date.toLocaleString(undefined, {
+            month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        }
+
+        // Fill SSR-rendered timestamps in the user's locale.
+        var stamps = document.querySelectorAll('.chat-bubble-time[data-iso]');
+        for (var s = 0; s < stamps.length; s++) {
+          var iso = stamps[s].getAttribute('data-iso');
+          if (iso) stamps[s].textContent = formatChatTime(new Date(iso));
+        }
+
+        function nowStamp() {
+          return '<div class="chat-bubble-time">' + escapeHtml(formatChatTime(new Date())) + '</div>';
+        }
+
         function addUserMessage(text) {
           var row = document.createElement('div');
           row.className = 'chat-bubble-row chat-bubble-row-user';
-          row.innerHTML = '<div class="chat-bubble chat-bubble-user"><div class="chat-bubble-text">' + escapeHtml(text) + '</div></div>' +
+          row.innerHTML = '<div class="chat-bubble chat-bubble-user"><div class="chat-bubble-text">' + escapeHtml(text) + '</div>' + nowStamp() + '</div>' +
             '<div class="chat-avatar chat-avatar-user">User</div>';
           messages.insertBefore(row, streamingRow);
           scrollToBottom();
@@ -135,7 +154,8 @@ export const ChatPage: FC<ChatPageProps> = ({ messages, hasApiKey, teamBase, tea
             row.innerHTML = '<div class="chat-avatar chat-avatar-assistant">Arch</div>' +
               '<div class="chat-bubble chat-bubble-assistant">' +
               '<div class="chat-bubble-text">' + streamingContent.innerHTML + '</div>' +
-              streamingTools.innerHTML + '</div>';
+              streamingTools.innerHTML +
+              nowStamp() + '</div>';
             messages.insertBefore(row, streamingRow);
           }
           streamingRow.style.display = 'none';
@@ -227,7 +247,7 @@ export const ChatPage: FC<ChatPageProps> = ({ messages, hasApiKey, teamBase, tea
                         finalizeStreaming();
                         var errRow = document.createElement('div');
                         errRow.className = 'chat-bubble-row chat-bubble-row-assistant';
-                        errRow.innerHTML = '<div class="chat-bubble chat-bubble-error"><div class="chat-bubble-text">' + escapeHtml(event.content) + '</div></div>';
+                        errRow.innerHTML = '<div class="chat-bubble chat-bubble-error"><div class="chat-bubble-text">' + escapeHtml(event.content) + '</div>' + nowStamp() + '</div>';
                         messages.insertBefore(errRow, streamingRow);
                         input.disabled = false;
                         sendBtn.disabled = false;
