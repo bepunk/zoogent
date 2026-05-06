@@ -231,9 +231,26 @@ pageRoutes.get('/teams/:slug/agents/:id', async (c) => {
     .where(eq(agentRuns.agentId, id))
     .orderBy(desc(agentRuns.startedAt)).limit(20).all();
 
-  const errorRuns = db.select().from(agentRuns)
+  // Sort errors by id DESC (autoincrement → monotonic reverse-chrono).
+  // finishedAt is unreliable: orphaned runs from server restarts get
+  // status='error' without finishedAt set, so they'd float to either end of
+  // a finishedAt-sorted list.
+  const errorRunsRaw = db.select().from(agentRuns)
     .where(and(eq(agentRuns.agentId, id), inArray(agentRuns.status, ['error', 'timeout'])))
-    .orderBy(desc(agentRuns.finishedAt)).limit(10).all();
+    .orderBy(desc(agentRuns.id)).limit(10).all();
+
+  // Build per-agent run id → local rank map so the errors panel shows the
+  // same #N numbering used in the Recent Runs table (newest run = #totalRuns).
+  const allAgentRunIdRows = db.select({ id: agentRuns.id }).from(agentRuns)
+    .where(eq(agentRuns.agentId, id))
+    .orderBy(asc(agentRuns.id))
+    .all();
+  const idToLocalRunId = new Map<number, number>();
+  allAgentRunIdRows.forEach((row, idx) => idToLocalRunId.set(row.id, idx + 1));
+  const errorRuns = errorRunsRaw.map(r => ({
+    ...r,
+    localRunId: idToLocalRunId.get(r.id) ?? r.id,
+  }));
 
   const totalRunsResult = db.select({ count: sql<number>`COUNT(*)` }).from(agentRuns)
     .where(eq(agentRuns.agentId, id)).get();

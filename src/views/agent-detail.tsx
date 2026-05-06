@@ -116,12 +116,13 @@ export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, errorRuns, 
           <div style="display: flex; flex-direction: column; gap: 10px;">
             {errorRuns.map((run: any) => {
               const stderrFull = run.stderr || '';
+              const ts = run.finishedAt ?? run.startedAt;
               return (
                 <div class="card" style="padding: 18px 22px; border-left: 4px solid var(--error);">
                   <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px;">
                     <span class="badge badge-error">{run.status}</span>
                     <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">
-                      {run.finishedAt ? formatRunTimestamp(new Date(run.finishedAt)) : '—'}
+                      {ts ? formatRunTimestamp(new Date(ts)) : '—'}
                     </span>
                     <span class="font-mono" style="font-size: 13px; color: var(--text-muted);">
                       exit {run.exitCode ?? '—'}
@@ -131,7 +132,7 @@ export const AgentDetailPage: FC<AgentDetailProps> = ({ agent, runs, errorRuns, 
                         {formatDuration(run.durationMs)}
                       </span>
                     )}
-                    <span class="font-mono" style="font-size: 13px; color: var(--text-muted);">run #{run.id}</span>
+                    <span class="font-mono" style="font-size: 13px; color: var(--text-muted);" title={`global id #${run.id}`}>run #{run.localRunId}</span>
                   </div>
                   {stderrFull ? (
                     <details>
