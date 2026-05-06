@@ -380,13 +380,27 @@ pageRoutes.get('/teams/:slug/tasks', async (c) => {
       .offset((page - 1) * PAGE_SIZE)
       .all();
 
+    // Per-team task numbering: rank each task by global id ASC within the
+    // team, so the first task ever created in this team is #1, the next is
+    // #2, etc. Independent of filters and pagination — IDs stay stable for a
+    // given task across views. One cheap query loads all team task IDs (just
+    // the integer column); typical teams have hundreds of tasks, well within
+    // memory budget.
+    const allTeamTaskRows = db.select({ id: agentTasks.id })
+      .from(agentTasks)
+      .where(inArray(agentTasks.agentId, teamAgentIds))
+      .orderBy(asc(agentTasks.id))
+      .all();
+    const idToTeamLocalId = new Map<number, number>();
+    allTeamTaskRows.forEach((row, idx) => idToTeamLocalId.set(row.id, idx + 1));
+
     tasks = rawTasks.map(t => {
       let createdByAgentName: string | null = null;
       if (t.createdByAgentId) {
         const creator = db.select({ name: agents.name }).from(agents).where(eq(agents.id, t.createdByAgentId)).get();
         createdByAgentName = creator?.name ?? null;
       }
-      return { ...t, createdByAgentName };
+      return { ...t, createdByAgentName, teamLocalId: idToTeamLocalId.get(t.id) ?? t.id };
     });
   }
 

@@ -7,6 +7,7 @@ import { timeAgo, formatRunTimestamp } from '../lib/time.js';
 interface TasksPageProps {
   tasks: {
     id: number;
+    teamLocalId: number;
     title: string;
     status: string;
     agentId: string;
@@ -136,7 +137,7 @@ export const TasksPage: FC<TasksPageProps> = ({
                       <td style="width: 28px; padding-right: 0; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 13px;">
                         <span class="task-toggle-arrow" data-task-id={task.id}>▸</span>
                       </td>
-                      <td class="font-mono" style="font-size: 14px; color: var(--text-muted);">#{task.id}</td>
+                      <td class="font-mono" style="font-size: 14px; color: var(--text-muted);" title={`global id #${task.id}`}>#{task.teamLocalId}</td>
                       <td style="font-weight: 600; color: var(--text-primary);">
                         {task.title}
                         {task.consensus && <span class="badge badge-accent" style="margin-left: 8px; font-size: 11px; padding: 2px 6px;">consensus</span>}
