@@ -373,7 +373,7 @@ POST /api/report/store
 
 POST /api/tasks
   Body: { agentId, createdByAgentId?, title, payload?, consensus?, consensusAgents?, consensusStrategy? }
-  Creates a task for the target agent. If target has wakeOnAssignment=true, it starts automatically.
+  Creates a task for the target agent. If target has wakeOnAssignment=true, it starts automatically. Tasks queued during a running batch are drained in a follow-up run after the current one exits — bursts are safe.
   consensus: if true, task requires multi-agent evaluation.
   consensusStrategy: "majority" | "unanimous" | "average_score"
 
@@ -744,7 +744,7 @@ When creating an agent:
 - cronSchedule: Cron expression (e.g., "0 */2 * * *")
 - skills: Skill paths to assign (via assign_skill after create)
 - budgetMonthlyCents: Monthly spending limit in cents. Agent is blocked if exceeded.
-- wakeOnAssignment: If true, agent starts automatically when a task is assigned to it.
+- wakeOnAssignment: If true, agent starts automatically when a task is assigned to it. Tasks created during a run are processed in a follow-up run after the current one exits (no bursts dropped).
 - env: Custom environment variables (e.g., API keys). Encrypted at rest with AES-256-GCM.
 - timeoutSec, graceSec: Run timeout and SIGKILL grace period.
 
